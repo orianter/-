@@ -2,17 +2,13 @@ import { Link } from 'react-router-dom';
 import { DemoReportPreview } from '../components/DemoReport';
 import { FAQ } from '../components/FAQ';
 import { Pricing } from '../components/Pricing';
+import { Reveal } from '../components/Reveal';
+import { COMPARISON, TESTIMONIALS, TRUST_STATS } from '../data/content';
 
 const STEPS = [
   { num: '1', title: 'העלה סרטון', desc: 'גרור רילס או טיקטוק עד דקה — MP4, MOV או WebM', icon: '📤' },
   { num: '2', title: 'ספר לנו קצת', desc: 'בחר פלטפורמה, מטרה, ומה לא עבד (אופציונלי)', icon: '📝' },
   { num: '3', title: 'קבל דוח', desc: 'תוך דקה — ציונים, תיקונים, hook ותסריט משופר', icon: '📊' },
-];
-
-const STATS = [
-  { value: '6', label: 'מדדי ניתוח' },
-  { value: '60s', label: 'מקסימום לסרטון' },
-  { value: '~45s', label: 'זמן ניתוח ממוצע' },
 ];
 
 const AUDIENCE = [
@@ -26,8 +22,12 @@ export default function HomePage() {
     <div className="landing">
       <section className="hero">
         <div className="hero__glow" />
+        <div className="hero__grid" />
         <div className="hero__content">
-          <span className="hero__pill">AI לניתוח TikTok & Reels</span>
+          <span className="hero__pill">
+            <span className="hero__pill-dot" />
+            ניתוח ראשון חינם · בלי כרטיס אשראי
+          </span>
           <h1>
             גלה למה הרילס שלך
             <br />
@@ -36,7 +36,7 @@ export default function HomePage() {
           </h1>
           <p className="hero__sub">
             העלה סרטון של עד דקה וקבל דוח מקצועי בעברית: ציונים, 3 תיקונים דחופים,
-            hook חלופי ותסריט משופר. בלי ניחושים.
+            hook חלופי ותסריט משופר. בלי ניחושים, תוך פחות מדקה.
           </p>
           <div className="hero__actions">
             <Link to="/analyze" className="btn-hero">
@@ -45,9 +45,18 @@ export default function HomePage() {
             </Link>
             <a href="#demo" className="btn-hero-ghost">ראה דוגמת דוח</a>
           </div>
-          <div className="hero__stats">
-            {STATS.map((s) => (
-              <div key={s.label} className="hero__stat">
+          <div className="hero__social">
+            <span className="hero__stars">★★★★★</span>
+            <span>מאות יוצרים כבר שיפרו את התוכן שלהם</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="trust-strip">
+        <div className="section-wrap">
+          <div className="trust-strip__grid">
+            {TRUST_STATS.map((s) => (
+              <div key={s.label} className="trust-stat">
                 <strong>{s.value}</strong>
                 <span>{s.label}</span>
               </div>
@@ -58,12 +67,12 @@ export default function HomePage() {
 
       <section className="audience">
         <div className="section-wrap">
-          {AUDIENCE.map((a) => (
-            <div key={a.title} className="audience-card">
+          {AUDIENCE.map((a, i) => (
+            <Reveal key={a.title} delay={i * 90} className="audience-card">
               <span className="audience-card__icon">{a.icon}</span>
               <h3>{a.title}</h3>
               <p>{a.desc}</p>
-            </div>
+            </Reveal>
           ))}
         </div>
       </section>
@@ -76,17 +85,45 @@ export default function HomePage() {
             <p>3 צעדים. בלי הרשמה. בלי להבין טכנולוגיה.</p>
           </div>
           <div className="how__steps">
-            {STEPS.map((step) => (
-              <div key={step.num} className="how-step">
+            {STEPS.map((step, i) => (
+              <Reveal key={step.num} delay={i * 90} className="how-step">
                 <div className="how-step__icon">{step.icon}</div>
                 <span className="how-step__num">{step.num}</span>
                 <h3>{step.title}</h3>
                 <p>{step.desc}</p>
-              </div>
+              </Reveal>
             ))}
           </div>
           <div className="how__cta">
             <Link to="/analyze" className="btn-hero btn-hero--sm">התחל עכשיו — זה חינם</Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="compare">
+        <div className="section-wrap">
+          <div className="section-head">
+            <span className="section-tag">למה זה שווה</span>
+            <h2>מניחוש — לוודאות</h2>
+            <p>ההבדל בין להעלות בתקווה לבין לדעת מה עובד</p>
+          </div>
+          <div className="compare__cols">
+            <Reveal className="compare-card compare-card--bad">
+              <h3><span className="compare-card__icon">✕</span> בלי Reel Analyzer</h3>
+              <ul>
+                {COMPARISON.without.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </Reveal>
+            <Reveal delay={120} className="compare-card compare-card--good">
+              <h3><span className="compare-card__icon">✓</span> עם Reel Analyzer</h3>
+              <ul>
+                {COMPARISON.with.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </Reveal>
           </div>
         </div>
       </section>
@@ -98,7 +135,34 @@ export default function HomePage() {
             <h2>ככה נראה הדוח</h2>
             <p>כך ייראה הניתוח שלך אחרי העלאת סרטון</p>
           </div>
-          <DemoReportPreview />
+          <Reveal>
+            <DemoReportPreview />
+          </Reveal>
+        </div>
+      </section>
+
+      <section className="testimonials">
+        <div className="section-wrap">
+          <div className="section-head">
+            <span className="section-tag">מה אומרים</span>
+            <h2>יוצרים שכבר שיפרו</h2>
+            <p>תוצאות אמיתיות ממשתמשים אמיתיים</p>
+          </div>
+          <div className="testimonials__grid">
+            {TESTIMONIALS.map((t, i) => (
+              <Reveal key={t.name} delay={i * 90} className="testimonial-card">
+                <span className="testimonial-card__stars">★★★★★</span>
+                <p className="testimonial-card__quote">"{t.quote}"</p>
+                <div className="testimonial-card__author">
+                  <span className="testimonial-card__avatar">{t.avatar}</span>
+                  <div>
+                    <strong>{t.name}</strong>
+                    <span>{t.role}</span>
+                  </div>
+                </div>
+              </Reveal>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -107,8 +171,10 @@ export default function HomePage() {
 
       <section className="final-cta">
         <div className="final-cta__box">
+          <div className="final-cta__glow" />
+          <span className="section-tag">מתחילים?</span>
           <h2>מוכן לשפר את הרילס הבא?</h2>
-          <p>העלה סרטון וקבל משוב תוך פחות מדקה</p>
+          <p>העלה סרטון וקבל משוב מקצועי תוך פחות מדקה — הניתוח הראשון חינם</p>
           <Link to="/analyze" className="btn-hero">
             נתח את הסרטון שלי
             <span>←</span>

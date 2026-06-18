@@ -4,52 +4,54 @@ title Reel Analyzer
 cd /d "%~dp0"
 
 echo.
-echo  ╔══════════════════════════════════════╗
-echo  ║       Reel Analyzer - מפעיל          ║
-echo  ╚══════════════════════════════════════╝
+echo  Reel Analyzer - מפעיל...
 echo.
 
 where node >nul 2>&1
 if errorlevel 1 (
-    echo  [X] Node.js לא מותקן.
-    echo      הורד מ: https://nodejs.org
-    echo      התקן, הפעל מחדש את המחשב, והרץ שוב.
+    echo  [X] Node.js לא מותקן - הורד מ nodejs.org
     pause
     exit /b 1
 )
 
+:: סוגר עותקים ישנים שחוסמים את הפורטים
+echo  סוגר עותקים ישנים...
+for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":3001 " ^| findstr LISTENING') do taskkill /F /PID %%a >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":5173 " ^| findstr LISTENING') do taskkill /F /PID %%a >nul 2>&1
+timeout /t 2 /nobreak >nul
+
 if not exist "server\.env" (
-    echo  [!] יוצר קובץ הגדרות...
     copy "server\.env.example" "server\.env" >nul
     echo.
-    echo  ══════════════════════════════════════
-    echo   חובה: פתח את הקובץ server\.env
-    echo   והדבק את מפתח OpenAI שלך בשורה:
-    echo   OPENAI_API_KEY=sk-...
-    echo.
-    echo   קבל מפתח מ: platform.openai.com/api-keys
-    echo  ══════════════════════════════════════
-    echo.
+    echo  [!] פתח את server\.env והדבק מפתח OpenAI
+    echo      קבל מ: platform.openai.com/api-keys
     notepad "server\.env"
-    echo  שמור את הקובץ ב-Notepad וסגור אותו.
     pause
 )
 
-if not exist "node_modules\" (
-    echo  מתקין... ^(פעם ראשונה, דקה-שתיים^)
-    call npm install
-    if not exist "client\node_modules\" (
-        cd client && call npm install && cd ..
-    )
-    if not exist "server\node_modules\" (
-        cd server && call npm install && cd ..
-    )
+findstr /C:"sk-" "server\.env" >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo  [X] חסר מפתח OpenAI ב-server\.env
+    echo      פתח את הקובץ והדבק: OPENAI_API_KEY=sk-...
+    notepad "server\.env"
+    pause
+    exit /b 1
 )
 
-echo  מפעיל את האתר...
-echo  הדפדפן ייפתח אוטומטית.
-echo  לעצירה: סגור את החלון הזה או Ctrl+C
+if not exist "server\node_modules\" (
+    echo  מתקין בפעם הראשונה - דקה...
+    call npm install
+    cd client && call npm install && cd ..
+    cd server && call npm install && cd ..
+)
+
+echo.
+echo  ========================================
+echo   האתר עולה על: http://localhost:5173
+echo   לעצירה: סגור את החלון הזה
+echo  ========================================
 echo.
 
-start "" cmd /c "timeout /t 4 /nobreak >nul && start http://localhost:5173"
+start "" cmd /c "timeout /t 5 /nobreak >nul && start http://localhost:5173"
 call npm run dev

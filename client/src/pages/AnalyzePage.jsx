@@ -25,6 +25,8 @@ const STEPS = [
   { label: 'מכין דוח', icon: '📋' },
 ];
 
+const MAX_FILE_MB = 100;
+
 export default function AnalyzePage() {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -37,6 +39,7 @@ export default function AnalyzePage() {
   const [error, setError] = useState(null);
   const [apiReady, setApiReady] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef(null);
   const stepTimerRef = useRef(null);
 
@@ -44,7 +47,7 @@ export default function AnalyzePage() {
     fetch(apiUrl('/api/health'))
       .then((r) => r.json())
       .then(setApiReady)
-      .catch(() => setApiReady({ ok: false, hasApiKey: false }));
+      .catch(() => setApiReady({ ok: false, hasApiKey: false, unreachable: true }));
   }, []);
 
   useEffect(() => () => {
@@ -60,8 +63,14 @@ export default function AnalyzePage() {
 
   const handleFile = useCallback((selected) => {
     if (!selected) return;
-    if (!selected.type.startsWith('video/')) {
+    const isVideo =
+      selected.type.startsWith('video/') || /\.(mp4|webm|mov|avi)$/i.test(selected.name);
+    if (!isVideo) {
       setError('יש להעלות קובץ וידאו (MP4, WebM, MOV)');
+      return;
+    }
+    if (selected.size > MAX_FILE_MB * 1024 * 1024) {
+      setError(`הקובץ גדול מדי (${(selected.size / 1024 / 1024).toFixed(0)}MB). המקסימום הוא ${MAX_FILE_MB}MB.`);
       return;
     }
     setFile(selected);
@@ -75,6 +84,7 @@ export default function AnalyzePage() {
 
   const onDrop = (e) => {
     e.preventDefault();
+    setDragActive(false);
     handleFile(e.dataTransfer.files[0]);
   };
 
@@ -154,10 +164,16 @@ export default function AnalyzePage() {
         <p>העלה רילס או טיקטוק (עד דקה) וקבל דוח מלא תוך כדקה</p>
       </div>
 
-      {apiReady && !apiReady.hasApiKey && (
-        <div className="analyze-alert analyze-alert--warn">
-          <strong>נדרשת הגדרה חד-פעמית:</strong> הוסף מפתח OpenAI בקובץ{' '}
-          <code>server/.env</code> — ראה מדריך בהתחלה.md
+      {apiReady && apiReady.unreachable && (
+        <div className="analyze-alert analyze-alert--error">
+          <strong>השרת לא זמין כרגע.</strong> ודא שהשרת רץ (הפעל.bat) ונסה לרענן את הדף.
+        </div>
+      )}
+
+      {apiReady && apiReady.demoMode && (
+        <div className="analyze-alert analyze-alert--demo">
+          <strong>מצב הדגמה פעיל:</strong> תקבל דוח לדוגמה המבוסס על נתוני הסרטון האמיתיים שלך
+          (אורך, פורמט). לניתוח AI מלא — הוסף מפתח OpenAI בקובץ <code>server/.env</code>.
         </div>
       )}
 
@@ -183,10 +199,20 @@ export default function AnalyzePage() {
       {!result && !loading && (
         <div className="analyze-panel">
           <div
-            className={`dropzone ${file ? 'dropzone--has-file' : ''}`}
+            className={`dropzone ${file ? 'dropzone--has-file' : ''} ${dragActive ? 'dropzone--drag' : ''}`}
             onDrop={onDrop}
-            onDragOver={(e) => e.preventDefault()}
+            onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+            onDragLeave={() => setDragActive(false)}
             onClick={() => !file && fileInputRef.current?.click()}
+            onKeyDown={(e) => {
+              if (!file && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
+            role="button"
+            tabIndex={file ? -1 : 0}
+            aria-label="העלאת סרטון — גרור לכאן או לחץ לבחירה"
           >
             <input
               ref={fileInputRef}
@@ -268,10 +294,10 @@ export default function AnalyzePage() {
 
           <button
             className="btn-analyze"
-            disabled={!file || !apiReady?.hasApiKey}
+            disabled={!file || !apiReady || apiReady.unreachable}
             onClick={analyze}
           >
-            נתח את הסרטון ←
+            {apiReady?.demoMode ? 'נתח את הסרטון (הדגמה) ←' : 'נתח את הסרטון ←'}
           </button>
 
           <p className="analyze-disclaimer">
@@ -283,6 +309,11 @@ export default function AnalyzePage() {
       {result && analysis && (
         <div id="report" className="report">
           <div className="report__top">
+            {result.demo && (
+              <div className="report__demo-badge">
+                דוח הדגמה · מבוסס על נתוני הסרטון האמיתיים שלך
+              </div>
+            )}
             <div className="report__verdict-wrap">
               <ScoreRing score={analysis.score} />
               <div>

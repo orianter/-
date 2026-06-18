@@ -4,36 +4,39 @@ import fs from 'fs/promises';
 import path from 'path';
 import OpenAI from 'openai';
 import { toFile } from 'openai/uploads';
+import {
+  buildFrameTimestamps,
+  formatTranscript,
+  formatVideoMeta,
+  MAX_DURATION_SEC,
+  normalizeAnalysis,
+  parseModelJson,
+  PLATFORM_LABELS,
+} from './lib/utils.js';
+import { buildDemoAnalysis } from './lib/demo.js';
+import { probeVideo } from './lib/probe.js';
 
 if (ffmpegPath) {
   ffmpeg.setFfmpegPath(ffmpegPath);
 }
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let _openai = null;
+function getOpenAI() {
+  if (!_openai) {
+    _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return _openai;
+}
 
-const PLATFORM_LABELS = {
-  tiktok: 'TikTok',
-  reels: 'Instagram Reels',
-  both: 'TikTok ו-Reels',
-};
-
-function getVideoMetadata(videoPath) {
-  return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(videoPath, (err, metadata) => {
-      if (err) return reject(err);
-      const videoStream = metadata.streams?.find((s) => s.codec_type === 'video');
-      const duration = metadata.format?.duration || 60;
-      const width = videoStream?.width;
-      const height = videoStream?.height;
-      resolve({
-        durationSec: duration,
-        width,
-        height,
-        isVertical: height && width ? height > width : null,
-        fps: videoStream?.r_frame_rate,
-      });
-    });
-  });
+async function getVideoMetadata(videoPath) {
+  const meta = await probeVideo(videoPath);
+  return {
+    durationSec: meta.durationSec || 60,
+    width: meta.width,
+    height: meta.height,
+    isVertical: meta.isVertical,
+    hasAudio: meta.hasAudio,
+  };
 }
 
 function extractAudio(videoPath, outputPath) {
@@ -63,30 +66,9 @@ function extractFrame(videoPath, timestamp, outputPath) {
   });
 }
 
-function buildFrameTimestamps(durationSec) {
-  const d = Math.min(durationSec, 60);
-  const points = new Set([0, 0.5, 1, 2, 3, 5]);
-
-  if (d > 8) points.add(Math.round(d * 0.2));
-  if (d > 10) points.add(Math.round(d * 0.4));
-  if (d > 14) points.add(Math.round(d * 0.6));
-  if (d > 18) points.add(Math.round(d * 0.8));
-  if (d > 4) points.add(Math.max(0, Math.round(d - 2)));
-
-  return [...points]
-    .filter((t) => t >= 0 && t <= d)
-    .sort((a, b) => a - b)
-    .slice(0, 10);
-}
-
 async function transcribeAudio(audioPath) {
-  const audioFile = await toFile(
-    await fs.readFile(audioPath),
-    'audio.mp3',
-    { type: 'audio/mpeg' }
-  );
-
-  return openai.audio.transcriptions.create({
+  const audioFile = await toFile(await fs.readFile(audioPath), 'audio.mp3', { type: 'audio/mpeg' });
+  return getOpenAI().audio.transcriptions.create({
     file: audioFile,
     model: 'whisper-1',
     response_format: 'verbose_json',
@@ -97,34 +79,18 @@ async function transcribeAudio(audioPath) {
 async function extractFrames(videoPath, workDir, durationSec) {
   const timestamps = buildFrameTimestamps(durationSec);
   const frames = [];
-
   for (let i = 0; i < timestamps.length; i++) {
     const ts = timestamps[i];
     const framePath = path.join(workDir, `frame-${i}.jpg`);
-    await extractFrame(videoPath, ts, framePath);
-    const buffer = await fs.readFile(framePath);
-    frames.push({ timestamp: ts, base64: buffer.toString('base64') });
+    try {
+      await extractFrame(videoPath, ts, framePath);
+      const buffer = await fs.readFile(framePath);
+      frames.push({ timestamp: ts, base64: buffer.toString('base64') });
+    } catch {
+      // Skip frames that fail (e.g. timestamp past EOF) — keep the rest.
+    }
   }
-
   return frames;
-}
-
-function formatTranscript(transcription) {
-  if (!transcription.segments?.length) {
-    return transcription.text || '(ללא דיבור מזוהה)';
-  }
-  return transcription.segments
-    .map((s) => `[${s.start.toFixed(1)}s–${s.end.toFixed(1)}s] ${s.text.trim()}`)
-    .join('\n');
-}
-
-function formatVideoMeta(meta) {
-  const parts = [];
-  if (meta.width && meta.height) {
-    parts.push(`${meta.width}×${meta.height}`);
-    parts.push(meta.isVertical ? 'אנכי (9:16)' : 'אופקי — לא אידיאלי לרילס');
-  }
-  return parts.join(' · ') || 'לא זוהה';
 }
 
 function buildAnalysisPrompt({ platform, goal, problem, durationSec, transcript, frameCount, videoMeta }) {
@@ -155,7 +121,7 @@ ${transcript}
 החזר JSON בלבד (ללא markdown) במבנה המדויק:
 {
   "score": <1-10>,
-  "verdict": "<משפט אחד — פסק דין קצר, למשל: פתיחה חזקה אבל CTA חסר>",
+  "verdict": "<משפט אחד — פסק דין קצר>",
   "summary": "<2-3 משפטים>",
   "categories": {
     "hook": { "score": <1-10>, "label": "פתיחה (Hook)", "note": "<משפט>" },
@@ -165,27 +131,24 @@ ${transcript}
     "audio": { "score": <1-10>, "label": "אודיו", "note": "<משפט>" },
     "platformFit": { "score": <1-10>, "label": "התאמה לפלטפורמה", "note": "<משפט>" }
   },
-  "priorityFixes": ["<התיקון הכי דחוף #1>", "<#2>", "<#3>"],
-  "whyItFailed": ["<סיבה>", ...],
-  "whatToChange": ["<שינוי קונקרטי>", ...],
-  "howToImprove": ["<המלצה>", ...],
-  "hookSuggestion": "<פתיחה חלופית — 1-2 משפטים>",
+  "priorityFixes": ["<#1>", "<#2>", "<#3>"],
+  "whyItFailed": ["<סיבה>"],
+  "whatToChange": ["<שינוי קונקרטי>"],
+  "howToImprove": ["<המלצה>"],
+  "hookSuggestion": "<פתיחה חלופית>",
   "scriptSuggestion": "<תסריט/outline משופר>",
-  "platformTips": ["<טיפ>", ...],
-  "timeline": [{ "second": <number>, "note": "<מה קורה כאן ולמה זה חשוב>" }]
+  "platformTips": ["<טיפ>"],
+  "timeline": [{ "second": <number>, "note": "<מה קורה ולמה חשוב>" }]
 }`;
 }
 
 async function analyzeWithVision({ frames, prompt }) {
   const imageParts = frames.flatMap((frame) => [
     { type: 'text', text: `פריים ב-${frame.timestamp} שניות:` },
-    {
-      type: 'image_url',
-      image_url: { url: `data:image/jpeg;base64,${frame.base64}`, detail: 'low' },
-    },
+    { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${frame.base64}`, detail: 'low' } },
   ]);
 
-  const response = await openai.chat.completions.create({
+  const response = await getOpenAI().chat.completions.create({
     model: 'gpt-4o',
     response_format: { type: 'json_object' },
     messages: [
@@ -194,39 +157,66 @@ async function analyzeWithVision({ frames, prompt }) {
         content:
           'אתה אנליסט תוכן ויראלי מקצועי. עונה תמיד בעברית. משוב ישיר, ספציפי ומעשי. JSON תקין בלבד.',
       },
-      {
-        role: 'user',
-        content: [{ type: 'text', text: prompt }, ...imageParts],
-      },
+      { role: 'user', content: [{ type: 'text', text: prompt }, ...imageParts] },
     ],
     max_tokens: 3000,
     temperature: 0.4,
   });
 
   const content = response.choices[0]?.message?.content;
-  if (!content) throw new Error('לא התקבלה תשובה מהמודל');
+  return normalizeAnalysis(parseModelJson(content));
+}
 
-  return JSON.parse(content);
+function publicMeta(videoMeta) {
+  return {
+    width: videoMeta.width,
+    height: videoMeta.height,
+    isVertical: videoMeta.isVertical,
+  };
+}
+
+// Demo path: reads REAL metadata via ffmpeg, returns a labeled mock analysis.
+// Lets the whole app work end-to-end without an OpenAI key.
+export async function analyzeVideoDemo({ videoPath, platform, goal, problem }) {
+  const videoMeta = await getVideoMetadata(videoPath);
+  if (videoMeta.durationSec > MAX_DURATION_SEC) {
+    throw new Error('הסרטון ארוך מדי. מקסימום דקה אחת (60 שניות).');
+  }
+  return {
+    demo: true,
+    durationSec: Math.round(videoMeta.durationSec * 10) / 10,
+    platform,
+    videoMeta: publicMeta(videoMeta),
+    transcript: '(מצב הדגמה — תמלול אמיתי זמין לאחר חיבור מפתח OpenAI)',
+    frameTimestamps: buildFrameTimestamps(videoMeta.durationSec),
+    analysis: buildDemoAnalysis(videoMeta, { platform, goal, problem }),
+  };
 }
 
 export async function analyzeVideo({ videoPath, workDir, platform, goal, problem }) {
   const videoMeta = await getVideoMetadata(videoPath);
   const durationSec = videoMeta.durationSec;
 
-  if (durationSec > 65) {
+  if (durationSec > MAX_DURATION_SEC) {
     throw new Error('הסרטון ארוך מדי. מקסימום דקה אחת (60 שניות).');
   }
 
   const audioPath = path.join(workDir, 'audio.mp3');
-  await extractAudio(videoPath, audioPath);
+  const audioPromise = videoMeta.hasAudio
+    ? extractAudio(videoPath, audioPath).then(() => transcribeAudio(audioPath)).catch((err) => {
+        console.warn('Transcription failed:', err.message);
+        return { text: '(לא ניתן לתמלל — ייתכן שאין דיבור)', segments: [] };
+      })
+    : Promise.resolve({ text: '(אין ערוץ אודיו בסרטון)', segments: [] });
 
   const [transcription, frames] = await Promise.all([
-    transcribeAudio(audioPath).catch((err) => {
-      console.warn('Transcription failed:', err.message);
-      return { text: '(לא ניתן לתמלל — ייתכן שאין דיבור)', segments: [] };
-    }),
+    audioPromise,
     extractFrames(videoPath, workDir, durationSec),
   ]);
+
+  if (!frames.length) {
+    throw new Error('לא ניתן לחלץ תמונות מהסרטון. נסה קובץ אחר.');
+  }
 
   const transcript = formatTranscript(transcription);
   const prompt = buildAnalysisPrompt({
@@ -242,13 +232,10 @@ export async function analyzeVideo({ videoPath, workDir, platform, goal, problem
   const analysis = await analyzeWithVision({ frames, prompt });
 
   return {
+    demo: false,
     durationSec: Math.round(durationSec * 10) / 10,
     platform,
-    videoMeta: {
-      width: videoMeta.width,
-      height: videoMeta.height,
-      isVertical: videoMeta.isVertical,
-    },
+    videoMeta: publicMeta(videoMeta),
     transcript,
     frameTimestamps: frames.map((f) => f.timestamp),
     analysis,

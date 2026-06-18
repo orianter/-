@@ -64,12 +64,19 @@
 }
 
 .navbar__cta {
-  padding: 0.5rem 1rem;
+  padding: 0.5rem 1.1rem;
   border-radius: 10px;
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
   color: #fff !important;
   font-size: 0.88rem !important;
-  font-weight: 600;
+  font-weight: 700;
+  box-shadow: 0 4px 16px var(--accent-glow);
+  transition: transform 0.15s var(--ease), box-shadow 0.15s;
+}
+
+.navbar__cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 22px var(--accent-glow);
 }
 
 .site-footer {
