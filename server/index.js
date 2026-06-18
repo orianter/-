@@ -92,6 +92,10 @@ setInterval(() => {
   for (const [ip, e] of hits) if (now > e.resetAt) hits.delete(ip);
 }, 5 * 60 * 1000).unref?.();
 
+app.get('/', (_req, res) => {
+  res.json({ ok: true, service: 'reel-analyzer-api' });
+});
+
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
