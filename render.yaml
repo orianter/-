@@ -1,17 +1,18 @@
-services:
-  - type: web
-    name: reel-analyzer-api
-    runtime: node
-    plan: free
-    rootDir: server
-    buildCommand: npm install
-    startCommand: node index.js
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: CLIENT_URL
-        sync: false
-      - key: PORT
-        value: 10000
+services:
+  - type: web
+    name: reel-analyzer-api
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: CLIENT_URL
+        value: https://reelzanalyze1.vercel.app
+      - key: PORT
+        value: 10000
