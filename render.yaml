@@ -3,9 +3,8 @@ services:
     name: reel-analyzer-api
     runtime: node
     plan: free
-    rootDir: server
     buildCommand: npm install
-    startCommand: node index.js
+    startCommand: npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
@@ -14,5 +13,3 @@ services:
         sync: false
       - key: CLIENT_URL
         value: https://reelzanalyze1.vercel.app
-      - key: PORT
-        value: 10000
