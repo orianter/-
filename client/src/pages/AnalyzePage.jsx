@@ -18,7 +18,7 @@ const PLATFORMS = [
 
 const STEPS = [
   { label: 'קורא פרטי סרטון', icon: '📤' },
-  { label: 'מכין בקשה', icon: '🎧' },
+  { label: 'דוגם פריימים', icon: '🎧' },
   { label: 'שולח ל-Supabase', icon: '🎞️' },
   { label: 'מחבר ל-OpenAI', icon: '💬' },
   { label: 'מנתח AI', icon: '🧠' },
@@ -26,6 +26,137 @@ const STEPS = [
 ];
 
 const MAX_FILE_MB = 100;
+const FRAME_SAMPLE_SIZE = 120;
+
+function frameTimestamps(durationSec) {
+  const duration = Math.min(Math.max(Number(durationSec) || 0, 0), 60);
+  const points = new Set([0.2, 0.8, 1.5, 3]);
+  if (duration > 6) points.add(Math.round(duration * 0.25));
+  if (duration > 10) points.add(Math.round(duration * 0.5));
+  if (duration > 14) points.add(Math.round(duration * 0.75));
+  if (duration > 4) points.add(Math.max(0.2, duration - 1));
+
+  return [...points]
+    .filter((point) => point > 0 && point < duration)
+    .sort((a, b) => a - b)
+    .slice(0, 8);
+}
+
+function computeFrameMetrics(imageData, previousData) {
+  const { data, width, height } = imageData;
+  let luminanceSum = 0;
+  let luminanceSqSum = 0;
+  let edgeSum = 0;
+  let colorDiffSum = 0;
+  let darkPixels = 0;
+  let brightPixels = 0;
+  let sceneDiffSum = 0;
+  let sceneSamples = 0;
+
+  const luminanceAt = (idx) => 0.2126 * data[idx] + 0.7152 * data[idx + 1] + 0.0722 * data[idx + 2];
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const idx = (y * width + x) * 4;
+      const lum = luminanceAt(idx);
+      luminanceSum += lum;
+      luminanceSqSum += lum * lum;
+      colorDiffSum += Math.abs(data[idx] - data[idx + 1]) + Math.abs(data[idx] - data[idx + 2]) + Math.abs(data[idx + 1] - data[idx + 2]);
+      if (lum < 25) darkPixels += 1;
+      if (lum > 235) brightPixels += 1;
+
+      if (x > 0 && y > 0) {
+        edgeSum += Math.abs(lum - luminanceAt(idx - 4));
+        edgeSum += Math.abs(lum - luminanceAt(idx - width * 4));
+      }
+
+      if (previousData?.data) {
+        sceneDiffSum +=
+          Math.abs(data[idx] - previousData.data[idx]) +
+          Math.abs(data[idx + 1] - previousData.data[idx + 1]) +
+          Math.abs(data[idx + 2] - previousData.data[idx + 2]);
+        sceneSamples += 3;
+      }
+    }
+  }
+
+  const pixels = width * height;
+  const avgLum = luminanceSum / pixels;
+  const variance = Math.max(0, luminanceSqSum / pixels - avgLum * avgLum);
+
+  return {
+    brightness: Math.round(avgLum),
+    contrast: Math.round(Math.sqrt(variance)),
+    sharpness: Math.round(edgeSum / pixels),
+    colorfulness: Math.round(colorDiffSum / (pixels * 3)),
+    darkRatio: Math.round((darkPixels / pixels) * 100),
+    brightRatio: Math.round((brightPixels / pixels) * 100),
+    sceneChange: sceneSamples ? Math.round((sceneDiffSum / sceneSamples / 255) * 100) : 0,
+  };
+}
+
+async function sampleVideoFrames(file, durationSec) {
+  const timestamps = frameTimestamps(durationSec);
+  if (!timestamps.length) return [];
+
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const samples = [];
+    let previousData = null;
+    let index = 0;
+    let finished = false;
+
+    let timer = null;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (timer) clearTimeout(timer);
+      URL.revokeObjectURL(url);
+      resolve(samples);
+    };
+    if (!ctx) {
+      finish();
+      return;
+    }
+
+    const captureCurrentFrame = () => {
+      const sourceWidth = video.videoWidth || FRAME_SAMPLE_SIZE;
+      const sourceHeight = video.videoHeight || FRAME_SAMPLE_SIZE;
+      const scale = FRAME_SAMPLE_SIZE / Math.max(sourceWidth, sourceHeight);
+      canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+      canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      samples.push({
+        second: Math.round(timestamps[index] * 10) / 10,
+        ...computeFrameMetrics(imageData, previousData),
+      });
+      previousData = imageData;
+      index += 1;
+      seekNextFrame();
+    };
+
+    const seekNextFrame = () => {
+      if (index >= timestamps.length) {
+        finish();
+        return;
+      }
+      video.currentTime = timestamps[index];
+    };
+
+    timer = setTimeout(finish, 10000);
+    video.muted = true;
+    video.preload = 'metadata';
+    video.onloadedmetadata = seekNextFrame;
+    video.onseeked = captureCurrentFrame;
+    video.onerror = finish;
+    video.onended = finish;
+    video.src = url;
+  });
+}
 
 function readVideoMetadata(file) {
   return new Promise((resolve) => {
@@ -145,6 +276,7 @@ export default function AnalyzePage() {
       if (videoMeta.durationSec && videoMeta.durationSec > 65) {
         throw new Error('הסרטון ארוך מדי. המקסימום הוא דקה אחת.');
       }
+      const frameMetrics = await sampleVideoFrames(file, videoMeta.durationSec);
       const res = await fetch(analyzeFunctionUrl(), {
         method: 'POST',
         headers: supabaseHeaders({ 'Content-Type': 'application/json' }),
@@ -156,6 +288,7 @@ export default function AnalyzePage() {
           fileType: file.type,
           fileSizeMb: Math.round((file.size / 1024 / 1024) * 10) / 10,
           ...videoMeta,
+          frameMetrics,
         }),
       });
       const data = await res.json();
@@ -213,7 +346,7 @@ export default function AnalyzePage() {
     <div className="analyze-page">
       <div className="analyze-page__head">
         <h1>נתח את הסרטון שלך</h1>
-        <p>בחר רילס או טיקטוק וקבל דוח AI בסיסי לפי הפרטים שתזין</p>
+        <p>בחר רילס או טיקטוק וקבל דוח AI שמבוסס על דגימות אמיתיות מהסרטון</p>
       </div>
 
       {apiReady && apiReady.missingConfig && (
@@ -359,7 +492,7 @@ export default function AnalyzePage() {
           </button>
 
           <p className="analyze-disclaimer">
-            הסרטון לא נשלח לשרת בשלב הזה · רק פרטי הטופס והמטא־דאטה נשלחים ל-Supabase
+            הסרטון המלא לא נשלח לשרת · נשלחים רק פרטי הטופס ומדדי פריימים שנדגמו בדפדפן
           </p>
         </div>
       )}

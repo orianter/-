@@ -8,7 +8,7 @@ import { COMPARISON, TESTIMONIALS, TRUST_STATS } from '../data/content';
 const STEPS = [
   { num: '1', title: 'העלה סרטון', desc: 'גרור רילס או טיקטוק עד דקה — MP4, MOV או WebM', icon: '📤' },
   { num: '2', title: 'ספר לנו קצת', desc: 'בחר פלטפורמה, מטרה, ומה לא עבד (אופציונלי)', icon: '📝' },
-  { num: '3', title: 'קבל דוח', desc: 'דוח AI בסיסי — ציונים, תיקונים, hook ותסריט משופר', icon: '📊' },
+  { num: '3', title: 'קבל דוח', desc: 'דוח AI עם מדדי פריימים — ציונים, תיקונים, hook ותסריט משופר', icon: '📊' },
 ];
 
 const AUDIENCE = [
@@ -174,7 +174,7 @@ export default function HomePage() {
           <div className="final-cta__glow" />
           <span className="section-tag">מתחילים?</span>
           <h2>מוכן לשפר את הרילס הבא?</h2>
-          <p>העלה סרטון וקבל משוב AI בסיסי — הניתוח הראשון חינם</p>
+          <p>העלה סרטון וקבל משוב AI שמבוסס על דגימות אמיתיות — הניתוח הראשון חינם</p>
           <Link to="/analyze" className="btn-hero">
             נתח את הסרטון שלי
             <span>←</span>
