@@ -8,10 +8,14 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABA
 export const hasSupabaseConfig = Boolean(supabaseUrl && supabaseAnonKey);
 
 export function analyzeFunctionUrl() {
-  return supabaseUrl ? `${supabaseUrl}/functions/v1/analyze` : '';
+  return import.meta.env.PROD ? '/api/analyze' : `${supabaseUrl}/functions/v1/analyze`;
 }
 
 export function supabaseHeaders(extra = {}) {
+  if (import.meta.env.PROD) {
+    return extra;
+  }
+
   return {
     apikey: supabaseAnonKey,
     Authorization: `Bearer ${supabaseAnonKey}`,
