@@ -1,8 +1,16 @@
-// בפיתוח: ריק = משתמש ב-proxy של Vite (/api → localhost:3001)
-// בפרודקשן: כתובת השרת מ-Render (VITE_API_URL או ברירת מחדל)
-const PROD_API = 'https://reel-analyzer-9ggt.onrender.com';
-const base = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? PROD_API : '')).replace(/\/$/, '');
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-export function apiUrl(path) {
-  return `${base}${path}`;
+export const hasSupabaseConfig = Boolean(supabaseUrl && supabaseAnonKey);
+
+export function analyzeFunctionUrl() {
+  return supabaseUrl ? `${supabaseUrl}/functions/v1/analyze` : '';
+}
+
+export function supabaseHeaders(extra = {}) {
+  return {
+    apikey: supabaseAnonKey,
+    Authorization: `Bearer ${supabaseAnonKey}`,
+    ...extra,
+  };
 }

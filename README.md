@@ -1,6 +1,6 @@
 # Reel Analyzer
 
-ניתוח מקצועי לסרטוני **TikTok** ו-**Instagram Reels** (עד דקה) — מופעל על ידי AI.
+ניתוח AI בסיסי לסרטוני **TikTok** ו-**Instagram Reels** — מופעל דרך Supabase Edge Functions.
 
 ## מה האפליקציה נותנת
 
@@ -17,10 +17,15 @@
 ```bash
 npm install
 cd client && npm install && cd ..
-cd server && npm install && cd ..
 
-copy server\.env.example server\.env
-# הוסף OPENAI_API_KEY=sk-...
+copy client\.env.example client\.env
+# הוסף VITE_SUPABASE_URL ו-VITE_SUPABASE_ANON_KEY
+```
+
+ב-Supabase צריך להוסיף Secret בשם `OPENAI_API_KEY`, ואז לפרוס את הפונקציה:
+
+```bash
+supabase functions deploy analyze
 ```
 
 ## הרצה
@@ -35,14 +40,13 @@ npm run dev
 
 ```
 client/     React — ממשק בעברית
-server/     Express + ffmpeg + OpenAI
-  analyze.js   עיבוד וידאו וניתוח
-  cardcom.js   תשלום (לעתיד)
+supabase/   Edge Function שקוראת ל-OpenAI
+server/     שרת ישן לעיבוד וידאו מלא (לא בשימוש ב-client החדש)
 ```
 
 ## עלות OpenAI
 
-~$0.05–0.15 לסרטון של דקה.
+תלוי במודל ובאורך התשובה. כרגע הניתוח לא שולח את קובץ הווידאו עצמו ל-OpenAI.
 
 ## תשלום (Cardcom)
 

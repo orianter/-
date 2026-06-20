@@ -38,6 +38,6 @@ echo ========================================
 echo   הועלה! עכשיו ב-Vercel:
 echo   1. Deployments - Redeploy
 echo   2. Settings - Root Directory: ריק או client
-echo   3. VITE_API_URL = כתובת Render
+echo   3. VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY
 echo ========================================
 pause

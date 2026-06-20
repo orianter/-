@@ -3,7 +3,7 @@ import ffmpegPath from 'ffmpeg-static';
 
 // Parse ffmpeg's stderr banner into structured metadata.
 // We avoid ffprobe entirely because ffmpeg-static does NOT bundle ffprobe,
-// which would otherwise break metadata reading in production (e.g. Render).
+// which would otherwise break metadata reading in production.
 export function parseFfmpegMeta(stderr) {
   const text = String(stderr || '');
 

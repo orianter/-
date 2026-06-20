@@ -13,7 +13,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const MAX_FILE_BYTES = 100 * 1024 * 1024;
 
-// Render/Proxies: needed for correct client IP in rate limiting.
+// Proxies: needed for correct client IP in rate limiting.
 app.set('trust proxy', 1);
 
 const uploadDir = path.join(__dirname, 'uploads');

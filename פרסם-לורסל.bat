@@ -12,31 +12,23 @@ echo.
 echo  האתר עובד אצלך במחשב - מעולה!
 echo  עכשיו מעלים לאינטרנט.
 echo.
-echo  חשוב: צריך גם Render פעיל (השרת).
-echo  כתובת Render נראית כך:
-echo  https://reel-analyzer-api.onrender.com
+echo  חשוב: צריך Supabase פעיל עם פונקציה analyze.
+echo  כתובת Supabase נראית כך:
+echo  https://your-project.supabase.co
 echo.
-set /p RENDER_URL="  הדבק כאן כתובת Render (או Enter לדלג): "
+set /p SUPABASE_URL="  הדבק כאן Project URL של Supabase: "
+set /p SUPABASE_ANON_KEY="  הדבק כאן anon public key של Supabase: "
 
-if "%RENDER_URL%"=="" (
+if "%SUPABASE_URL%"=="" (
     echo.
-    echo  [!] בלי Render הניתוח לא יעבוד באינטרנט.
-    echo      קודם הגדר Render, אחר כך הרץ שוב.
+    echo  [!] בלי Supabase הניתוח לא יעבוד באינטרנט.
+    echo      קודם הגדר Supabase, אחר כך הרץ שוב.
     pause
     exit /b 1
 )
 
 :: הסר / בסוף אם יש
-if "%RENDER_URL:~-1%"=="/" set RENDER_URL=%RENDER_URL:~0,-1%
-
-echo.
-echo  בודק ש-Render עובד...
-curl -s "%RENDER_URL%/api/health" 2>nul | findstr "hasApiKey" >nul
-if errorlevel 1 (
-    echo  [!] Render לא מגיב. וודא שהשרת רץ ב-render.com
-    echo      נסה לפתוח: %RENDER_URL%/api/health
-    pause
-)
+if "%SUPABASE_URL:~-1%"=="/" set SUPABASE_URL=%SUPABASE_URL:~0,-1%
 
 echo.
 echo  מתקין Vercel CLI...
@@ -51,8 +43,9 @@ echo.
 pause
 
 cd client
-set VITE_API_URL=%RENDER_URL%
-call vercel --prod --yes -e VITE_API_URL=%RENDER_URL%
+set VITE_SUPABASE_URL=%SUPABASE_URL%
+set VITE_SUPABASE_ANON_KEY=%SUPABASE_ANON_KEY%
+call vercel --prod --yes -e VITE_SUPABASE_URL=%SUPABASE_URL% -e VITE_SUPABASE_ANON_KEY=%SUPABASE_ANON_KEY%
 
 echo.
 echo  ══════════════════════════════════════════════════
@@ -60,12 +53,12 @@ if errorlevel 1 (
     echo   משהו נכשל. נסה דרך האתר:
     echo   1. vercel.com - Import project
     echo   2. Root Directory: client
-    echo   3. VITE_API_URL = %RENDER_URL%
+    echo   3. VITE_SUPABASE_URL = %SUPABASE_URL%
+    echo   4. VITE_SUPABASE_ANON_KEY = הערך שקיבלת מ-Supabase
 ) else (
     echo   הצלחה! הקישור מופיע למעלה.
     echo.
-    echo   עכשיו ב-Render הוסף:
-    echo   CLIENT_URL = כתובת Vercel שקיבלת
+    echo   ודא שב-Supabase קיים Secret בשם OPENAI_API_KEY.
 )
 echo  ══════════════════════════════════════════════════
 echo.

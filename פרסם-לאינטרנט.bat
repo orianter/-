@@ -69,22 +69,20 @@ if errorlevel 1 (
 )
 echo  [OK] קוד הועלה ל-GitHub!
 
-:: ── Render ──
+:: ── Supabase ──
 echo.
-echo  ─── שלב 2 מתוך 3: Render ^(השרת^) ───
+echo  ─── שלב 2 מתוך 3: Supabase ^(API^) ───
 echo.
-echo  פותח Render. אם אין שירות - צור Web Service:
-echo    Root Directory: server
-echo    Build: npm install
-echo    Start: node index.js
-echo    Env: OPENAI_API_KEY = המפתח שלך
+echo  פותח Supabase. ודא שיש פונקציה analyze ו-Secret:
+echo    OPENAI_API_KEY = המפתח שלך
 echo.
-start https://dashboard.render.com/
+start https://supabase.com/dashboard/projects
 echo.
-set /p RENDER_URL="  הדבק כאן כתובת Render (https://xxx.onrender.com): "
-if "%RENDER_URL%"=="" (
+set /p SUPABASE_URL="  הדבק כאן Supabase Project URL (https://xxx.supabase.co): "
+set /p SUPABASE_ANON_KEY="  הדבק כאן Supabase anon public key: "
+if "%SUPABASE_URL%"=="" (
     echo  דלג - תוכל להוסיף אחר כך
-    set RENDER_URL=https://YOUR-RENDER.onrender.com
+    set SUPABASE_URL=https://YOUR-PROJECT.supabase.co
 )
 
 :: ── Vercel ──
@@ -96,7 +94,8 @@ echo.
 echo  הגדרות חשובות:
 echo    Root Directory:  ריק ^(אל תשנה^)
 echo    Environment Variable:
-echo      VITE_API_URL = %RENDER_URL%
+echo      VITE_SUPABASE_URL = %SUPABASE_URL%
+echo      VITE_SUPABASE_ANON_KEY = הערך מ-Supabase
 echo.
 start https://vercel.com/new
 echo.
@@ -107,8 +106,9 @@ if not errorlevel 1 (
     echo.
     echo  נפתח דפדפן להתחברות ל-Vercel - התחבר פעם אחת.
     cd client
-  set VITE_API_URL=%RENDER_URL%
-    vercel --prod --yes -e VITE_API_URL=%RENDER_URL%
+    set VITE_SUPABASE_URL=%SUPABASE_URL%
+    set VITE_SUPABASE_ANON_KEY=%SUPABASE_ANON_KEY%
+    vercel --prod --yes -e VITE_SUPABASE_URL=%SUPABASE_URL% -e VITE_SUPABASE_ANON_KEY=%SUPABASE_ANON_KEY%
     cd ..
 ) else (
     echo  פרוס ידנית ב-Vercel מהדפדפן שנפתח.
@@ -118,8 +118,8 @@ echo.
 echo  ══════════════════════════════════════════════════
 echo   כמעט סיימת!
 echo.
-echo   אחרי ש-Vercel עלה, חזור ל-Render ווסף:
-echo   CLIENT_URL = כתובת האתר מ-Vercel
+echo   אחרי ש-Vercel עלה, ודא שב-Supabase קיים:
+echo   OPENAI_API_KEY ב-Secrets
 echo.
 echo   בדיקה: פתח את האתר ^> נתח סרטון ^> העלה וידאו
 echo  ══════════════════════════════════════════════════

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { apiUrl } from '../api';
+import { analyzeFunctionUrl, hasSupabaseConfig, supabaseHeaders } from '../api';
 import {
   AnalysisSection,
   buildReportText,
@@ -17,15 +17,45 @@ const PLATFORMS = [
 ];
 
 const STEPS = [
-  { label: 'מעלה סרטון', icon: '📤' },
-  { label: 'מחלץ אודיו', icon: '🎧' },
-  { label: 'דוגם פריימים', icon: '🎞️' },
-  { label: 'מתמלל', icon: '💬' },
+  { label: 'קורא פרטי סרטון', icon: '📤' },
+  { label: 'מכין בקשה', icon: '🎧' },
+  { label: 'שולח ל-Supabase', icon: '🎞️' },
+  { label: 'מחבר ל-OpenAI', icon: '💬' },
   { label: 'מנתח AI', icon: '🧠' },
   { label: 'מכין דוח', icon: '📋' },
 ];
 
 const MAX_FILE_MB = 100;
+
+function readVideoMetadata(file) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    let settled = false;
+    const done = (meta = {}) => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      resolve(meta);
+    };
+    const timer = setTimeout(() => done(), 5000);
+
+    video.preload = 'metadata';
+    video.onloadedmetadata = () => {
+      clearTimeout(timer);
+      done({
+        durationSec: Number.isFinite(video.duration) ? video.duration : undefined,
+        width: video.videoWidth || undefined,
+        height: video.videoHeight || undefined,
+      });
+    };
+    video.onerror = () => {
+      clearTimeout(timer);
+      done();
+    };
+    video.src = url;
+  });
+}
 
 export default function AnalyzePage() {
   const [file, setFile] = useState(null);
@@ -44,10 +74,22 @@ export default function AnalyzePage() {
   const stepTimerRef = useRef(null);
 
   useEffect(() => {
-    fetch(apiUrl('/api/health'))
+    if (!hasSupabaseConfig) {
+      setApiReady({ ok: false, missingConfig: true });
+      return undefined;
+    }
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    fetch(analyzeFunctionUrl(), { signal: ctrl.signal, headers: supabaseHeaders() })
       .then((r) => r.json())
       .then(setApiReady)
-      .catch(() => setApiReady({ ok: false, hasApiKey: false, unreachable: true }));
+      .catch(() => setApiReady({ ok: false, hasApiKey: false, unreachable: true }))
+      .finally(() => clearTimeout(timer));
+    return () => {
+      ctrl.abort();
+      clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => () => {
@@ -98,14 +140,24 @@ export default function AnalyzePage() {
       setStepIndex((i) => Math.min(i + 1, STEPS.length - 1));
     }, 3500);
 
-    const form = new FormData();
-    form.append('video', file);
-    form.append('platform', platform);
-    form.append('goal', goal);
-    form.append('problem', problem);
-
     try {
-      const res = await fetch(apiUrl('/api/analyze'), { method: 'POST', body: form });
+      const videoMeta = await readVideoMetadata(file);
+      if (videoMeta.durationSec && videoMeta.durationSec > 65) {
+        throw new Error('הסרטון ארוך מדי. המקסימום הוא דקה אחת.');
+      }
+      const res = await fetch(analyzeFunctionUrl(), {
+        method: 'POST',
+        headers: supabaseHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          platform,
+          goal,
+          problem,
+          fileName: file.name,
+          fileType: file.type,
+          fileSizeMb: Math.round((file.size / 1024 / 1024) * 10) / 10,
+          ...videoMeta,
+        }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'שגיאה בניתוח');
       setStepIndex(STEPS.length - 1);
@@ -161,19 +213,25 @@ export default function AnalyzePage() {
     <div className="analyze-page">
       <div className="analyze-page__head">
         <h1>נתח את הסרטון שלך</h1>
-        <p>העלה רילס או טיקטוק (עד דקה) וקבל דוח מלא תוך כדקה</p>
+        <p>בחר רילס או טיקטוק וקבל דוח AI בסיסי לפי הפרטים שתזין</p>
       </div>
+
+      {apiReady && apiReady.missingConfig && (
+        <div className="analyze-alert analyze-alert--error">
+          <strong>Supabase לא מוגדר.</strong> הוסף ל-frontend את <code>VITE_SUPABASE_URL</code> ואת <code>VITE_SUPABASE_ANON_KEY</code>.
+        </div>
+      )}
 
       {apiReady && apiReady.unreachable && (
         <div className="analyze-alert analyze-alert--error">
-          <strong>השרת לא זמין כרגע.</strong> ודא שהשרת רץ (הפעל.bat) ונסה לרענן את הדף.
+          <strong>Supabase Function לא עונה.</strong> ודא שהפונקציה <code>analyze</code> נפרסה ושיש בה secret בשם <code>OPENAI_API_KEY</code>.
         </div>
       )}
 
       {apiReady && apiReady.demoMode && (
         <div className="analyze-alert analyze-alert--demo">
           <strong>מצב הדגמה פעיל:</strong> תקבל דוח לדוגמה המבוסס על נתוני הסרטון האמיתיים שלך
-          (אורך, פורמט). לניתוח AI מלא — הוסף מפתח OpenAI בקובץ <code>server/.env</code>.
+          (אורך, פורמט). לניתוח AI מלא — הוסף את <code>OPENAI_API_KEY</code> ב-Supabase Secrets.
         </div>
       )}
 
@@ -294,14 +352,14 @@ export default function AnalyzePage() {
 
           <button
             className="btn-analyze"
-            disabled={!file || !apiReady || apiReady.unreachable}
+            disabled={!file || !apiReady || apiReady.unreachable || apiReady.missingConfig}
             onClick={analyze}
           >
             {apiReady?.demoMode ? 'נתח את הסרטון (הדגמה) ←' : 'נתח את הסרטון ←'}
           </button>
 
           <p className="analyze-disclaimer">
-            הסרטון נמחק מהשרת מיד אחרי הניתוח · לא נשמר ולא משותף
+            הסרטון לא נשלח לשרת בשלב הזה · רק פרטי הטופס והמטא־דאטה נשלחים ל-Supabase
           </p>
         </div>
       )}
