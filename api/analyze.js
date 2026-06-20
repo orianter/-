@@ -4,9 +4,106 @@ const SUPABASE_ANON_KEY =
 
 const functionUrl = `${SUPABASE_URL}/functions/v1/analyze`;
 
+const CATEGORY_LABELS = {
+  hook: 'פתיחה (Hook)',
+  pacing: 'קצב ועריכה',
+  message: 'מסר ו-CTA',
+  visual: 'ויזואל',
+  audio: 'אודיו',
+  platformFit: 'התאמה לפלטפורמה',
+};
+
 function sendJson(res, status, body) {
   res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
   res.send(JSON.stringify(body));
+}
+
+function clampScore(value, fallback = 6) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  const normalized = n > 10 ? n / 10 : n;
+  return Math.min(10, Math.max(1, Math.round(normalized)));
+}
+
+function asArray(value) {
+  if (Array.isArray(value)) return value.filter(Boolean).map(String);
+  if (typeof value === 'string' && value.trim()) return [value.trim()];
+  return [];
+}
+
+function normalizeTimeline(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      second: Math.max(0, Math.round(Number(item.second ?? item.atSec) || 0)),
+      note: String(item.note ?? item.text ?? '').trim(),
+    }))
+    .filter((item) => item.note)
+    .slice(0, 12);
+}
+
+function buildCategories(score, sourceCategories) {
+  const sourceText = asArray(sourceCategories).join(', ');
+  return Object.fromEntries(
+    Object.entries(CATEGORY_LABELS).map(([key, label]) => [
+      key,
+      {
+        score,
+        label,
+        note: sourceText
+          ? `הניתוח הדגיש את התחומים: ${sourceText}.`
+          : 'נדרש לבדוק את הסרטון בפועל ולחדד את החלק הזה.',
+      },
+    ]),
+  );
+}
+
+function normalizeUpstream(data, input) {
+  const upperScore = data?.SCORE;
+  if (upperScore === undefined && data?.analysis && data.analysis.score > 0) {
+    return data;
+  }
+
+  const score = clampScore(upperScore ?? data?.analysis?.score);
+  const whyItFailed = asArray(data?.['WHY IT FAILED'] ?? data?.analysis?.whyItFailed);
+  const whatToChange = asArray(data?.['WHAT TO CHANGE'] ?? data?.analysis?.whatToChange);
+  const howToImprove = asArray(data?.['HOW TO IMPROVE'] ?? data?.analysis?.howToImprove);
+
+  return {
+    demo: false,
+    simplified: true,
+    durationSec: Number(input?.durationSec) || Number(data?.durationSec) || 60,
+    platform: input?.platform || data?.platform || 'tiktok',
+    videoMeta: {
+      fileName: input?.fileName || data?.videoMeta?.fileName || '',
+      fileType: input?.fileType || data?.videoMeta?.fileType || '',
+      fileSizeMb: Number(input?.fileSizeMb) || data?.videoMeta?.fileSizeMb || null,
+      width: Number(input?.width) || data?.videoMeta?.width || null,
+      height: Number(input?.height) || data?.videoMeta?.height || null,
+      isVertical: Number(input?.height) > Number(input?.width),
+    },
+    transcript: '',
+    frameTimestamps: [],
+    analysis: {
+      score,
+      verdict: String(data?.VERDICT || data?.analysis?.verdict || 'הניתוח הושלם.'),
+      summary: String(
+        data?.analysis?.summary ||
+          [...whyItFailed, ...whatToChange].slice(0, 2).join(' ') ||
+          'הניתוח הסתיים ומחזיר המלצות בסיסיות לשיפור הסרטון.',
+      ),
+      categories: buildCategories(score, data?.CATEGORIES ?? data?.analysis?.categories),
+      priorityFixes: asArray(data?.['PRIORITY FIXES'] ?? data?.analysis?.priorityFixes).slice(0, 5),
+      whyItFailed,
+      whatToChange,
+      howToImprove,
+      hookSuggestion: String(data?.['HOOK SUGGESTION'] || data?.analysis?.hookSuggestion || ''),
+      scriptSuggestion: String(data?.['SCRIPT SUGGESTION'] || data?.analysis?.scriptSuggestion || ''),
+      platformTips: asArray(data?.['PLATFORM TIPS'] ?? data?.analysis?.platformTips),
+      timeline: normalizeTimeline(data?.TIMELINE ?? data?.analysis?.timeline),
+    },
+  };
 }
 
 export default async function handler(req, res) {
@@ -36,6 +133,12 @@ export default async function handler(req, res) {
     });
 
     const text = await upstream.text();
+    if (upstream.ok && req.method === 'POST') {
+      const parsed = JSON.parse(text);
+      sendJson(res, upstream.status, normalizeUpstream(parsed, req.body || {}));
+      return;
+    }
+
     res.status(upstream.status).setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json');
     res.send(text);
   } catch (err) {
