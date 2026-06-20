@@ -194,6 +194,8 @@ export default function AnalyzePage() {
   const [platform, setPlatform] = useState('tiktok');
   const [goal, setGoal] = useState('');
   const [problem, setProblem] = useState('');
+  const [audience, setAudience] = useState('');
+  const [contentBrief, setContentBrief] = useState('');
   const [loading, setLoading] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [result, setResult] = useState(null);
@@ -284,6 +286,8 @@ export default function AnalyzePage() {
           platform,
           goal,
           problem,
+          audience,
+          contentBrief,
           fileName: file.name,
           fileType: file.type,
           fileSizeMb: Math.round((file.size / 1024 / 1024) * 10) / 10,
@@ -312,6 +316,8 @@ export default function AnalyzePage() {
     setError(null);
     setGoal('');
     setProblem('');
+    setAudience('');
+    setContentBrief('');
     setCopied(false);
     setPreview((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -471,12 +477,32 @@ export default function AnalyzePage() {
             </label>
 
             <label>
+              למי הסרטון מיועד? <span className="label-hint">(מומלץ)</span>
+              <input
+                type="text"
+                placeholder="בעלי עסקים, כלות, מתאמנים, הורים צעירים..."
+                value={audience}
+                onChange={(e) => setAudience(e.target.value)}
+              />
+            </label>
+
+            <label>
               מה לא עבד? <span className="label-hint">(אופציונלי)</span>
               <textarea
                 rows={2}
                 placeholder="מעט צפיות, אין לייקים, אנשים יוצאים מהר..."
                 value={problem}
                 onChange={(e) => setProblem(e.target.value)}
+              />
+            </label>
+
+            <label>
+              מה קורה / נאמר בסרטון? <span className="label-hint">(משפר מאוד את הניתוח)</span>
+              <textarea
+                rows={3}
+                placeholder="לדוגמה: אני מציג מוצר, אומר 'אם העסק שלך תקוע...', יש טקסט על המסך..."
+                value={contentBrief}
+                onChange={(e) => setContentBrief(e.target.value)}
               />
             </label>
           </div>

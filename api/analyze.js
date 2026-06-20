@@ -31,6 +31,10 @@ function asArray(value) {
   return [];
 }
 
+function asText(value, fallback = '') {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
 function normalizeTimeline(value) {
   if (!Array.isArray(value)) return [];
   return value
@@ -147,6 +151,118 @@ function visualEvidence(input) {
   };
 }
 
+function contentEvidence(input) {
+  const goal = asText(input?.goal);
+  const problem = asText(input?.problem);
+  const audience = asText(input?.audience);
+  const contentBrief = asText(input?.contentBrief);
+  const hasContext = Boolean(goal || problem || audience || contentBrief);
+  const notes = [];
+  const fixes = [];
+
+  if (!audience) {
+    notes.push('לא הוגדר קהל יעד ברור, ולכן קשה לדעת למי ההבטחה בסרטון אמורה לדבר.');
+    fixes.push('פתח את הסרטון בפנייה ישירה לקהל יעד אחד, למשל: "בעלי עסקים שמעלים רילס ולא מקבלים פניות".');
+  }
+  if (!goal) {
+    notes.push('לא הוגדרה מטרה עסקית/תוכנית ברורה לסרטון.');
+    fixes.push('בחר מטרה אחת לסרטון: צפיות, לידים, מכירה, שמירה, או תגובות. אל תנסה הכל יחד.');
+  }
+  if (!contentBrief) {
+    notes.push('לא סופק תיאור של מה נאמר או כתוב בסרטון, לכן הניתוח של המסר מוגבל ולא ימציא תמלול.');
+    fixes.push('הוסף משפט פתיחה, מה רואים על המסך ומה ה-CTA כדי לקבל ניתוח מסר הרבה יותר מדויק.');
+  } else {
+    const brief = contentBrief.toLowerCase();
+    if (!/[?]/.test(contentBrief) && !/(איך|למה|כמה|מה|טעות|סוד|לפני|אחרי|אל|בלי)/.test(brief)) {
+      fixes.push('ה-Hook צריך להכיל מתח ברור: שאלה, טעות נפוצה, הבטחה מדידה או ניגוד לפני/אחרי.');
+    }
+    if (!/(שלח|לחץ|כתוב|שמור|עקוב|קנה|דברו|השאירו|תגובה|לינק|ביו|וואטסאפ)/.test(brief)) {
+      fixes.push('חסר CTA ברור בסוף. אמור לצופה פעולה אחת מדויקת לעשות עכשיו.');
+      notes.push('לא זוהה CTA ברור בתיאור שסופק.');
+    }
+  }
+  if (problem) {
+    notes.push(`הבעיה שהיוצר דיווח עליה: ${problem}.`);
+  }
+
+  return { hasContext, goal, problem, audience, contentBrief, notes, fixes };
+}
+
+function unique(items, max = 8) {
+  return [...new Set(items.filter(Boolean).map((item) => String(item).trim()).filter(Boolean))].slice(0, max);
+}
+
+function deepRecommendations({ input, evidence, content, upstream }) {
+  const durationSec = Number(input?.durationSec) || 60;
+  const isVertical = Number(input?.height) > Number(input?.width);
+  const goal = content.goal || 'המטרה שלא הוגדרה';
+  const audience = content.audience || 'קהל יעד לא מוגדר';
+  const reportedProblem = content.problem || 'לא צוין';
+
+  const priority = [];
+  const why = [];
+  const changes = [];
+  const improve = [];
+  const platformTips = [];
+
+  priority.push(...evidence.fixes);
+  priority.push(...content.fixes);
+
+  why.push(...evidence.notes.slice(2));
+  why.push(...content.notes);
+
+  if (durationSec > 35) {
+    priority.push('קצר את הסרטון או בנה אותו בפרקים ברורים: Hook, הוכחה, ערך, CTA.');
+    why.push('לרילס/טיקטוק, סרטון ארוך בלי שינויי קצב חזקים נוטה לאבד צפייה לפני המסר המרכזי.');
+  }
+  if (!isVertical) {
+    priority.push('חתוך ל-9:16 ושמור את הנושא המרכזי במרכז הפריים.');
+  }
+  if (evidence.scores.hook <= 6) {
+    changes.push(`החלף פתיחה כללית בפתיחה שמדברת ישירות ל-${audience}: בעיה אחת, תוצאה אחת, מתח אחד.`);
+  }
+  if (evidence.scores.pacing <= 6) {
+    changes.push('חתוך dead air. כל 1-2 שניות צריך לקרות משהו: תנועה, זום, טקסט, שינוי זווית או הדגשה.');
+  }
+  if (evidence.scores.visual <= 6) {
+    changes.push('שפר תאורה קדמית, הגדל קונטרסט, והימנע מפריים חשוך/מטושטש בפתיחה.');
+  }
+  if (!content.contentBrief) {
+    changes.push('הוסף תיאור/תמלול קצר כדי שהניתוח יוכל לבדוק מסר, CTA והבטחה ולא רק מדדי וידאו.');
+  }
+
+  improve.push(`בנה את הסרטון סביב מטרה אחת: ${goal}. כל משפט שלא משרת אותה יורד בעריכה.`);
+  improve.push(`בדוק שכל 3 השניות הראשונות עונות לצופה על "למה זה חשוב לי עכשיו?"`);
+  improve.push('הוסף הוכחה אחת: מספר, צילום תוצאה, before/after, או דוגמה אמיתית.');
+  improve.push('סיים עם CTA אחד בלבד, לא רשימת בקשות.');
+
+  platformTips.push('TikTok/Reels מענישים פתיחה איטית: הבעיה או התוצאה חייבות להופיע בפריים הראשון.');
+  platformTips.push('שמור טקסט מרכזי באזור בטוח: לא צמוד לתחתית ולא מכוסה בכפתורי האפליקציה.');
+  platformTips.push('אם יש דיבור, הוסף כתוביות גדולות עם 4-7 מילים בכל רגע.');
+
+  const hookSuggestion = content.audience
+    ? `אם אתה ${content.audience} ו${reportedProblem !== 'לא צוין' ? `-${reportedProblem}` : 'הסרטונים שלך לא מביאים תוצאה'}, תראה את זה לפני שאתה מעלה עוד רילס.`
+    : 'אם הסרטונים שלך לא מביאים תוצאה, כנראה שהבעיה מתחילה ב-3 השניות הראשונות.';
+
+  const scriptSuggestion = [
+    `0-2 שניות: פנייה חדה לקהל: "${hookSuggestion}"`,
+    `2-6 שניות: הצג את הבעיה הספציפית בלי הקדמות.`,
+    `6-14 שניות: תן דוגמה/הוכחה אחת שמראה שאתה יודע על מה אתה מדבר.`,
+    `14-22 שניות: תן פתרון אחד פרקטי שאפשר ליישם מיד.`,
+    `סוף: CTA אחד: "כתוב לי X", "שמור את זה", או "שלח למי שזה רלוונטי".`,
+  ].join('\n');
+
+  return {
+    priority: unique([...priority, ...asArray(upstream?.['PRIORITY FIXES'] ?? upstream?.analysis?.priorityFixes)], 5),
+    why: unique([...why, ...asArray(upstream?.['WHY IT FAILED'] ?? upstream?.analysis?.whyItFailed)], 8),
+    changes: unique([...changes, ...asArray(upstream?.['WHAT TO CHANGE'] ?? upstream?.analysis?.whatToChange)], 8),
+    improve: unique([...improve, ...asArray(upstream?.['HOW TO IMPROVE'] ?? upstream?.analysis?.howToImprove)], 8),
+    platformTips: unique([...platformTips, ...asArray(upstream?.['PLATFORM TIPS'] ?? upstream?.analysis?.platformTips)], 8),
+    hookSuggestion,
+    scriptSuggestion,
+  };
+}
+
 function buildCategories(score, sourceCategories) {
   const sourceText = asArray(sourceCategories).join(', ');
   return Object.fromEntries(
@@ -165,6 +281,8 @@ function buildCategories(score, sourceCategories) {
 
 function normalizeUpstream(data, input) {
   const evidence = visualEvidence(input);
+  const content = contentEvidence(input);
+  const recommendations = deepRecommendations({ input, evidence, content, upstream: data });
   const upperScore = data?.SCORE;
   const score = clampScore(upperScore ?? data?.analysis?.score);
   const whyItFailed = asArray(data?.['WHY IT FAILED'] ?? data?.analysis?.whyItFailed);
@@ -206,7 +324,7 @@ function normalizeUpstream(data, input) {
     (score + evidence.scores.hook + evidence.scores.pacing + evidence.scores.visual + evidence.scores.platformFit) / 5,
   );
   const priorityFixes = [
-    ...evidence.fixes,
+    ...recommendations.priority,
     ...asArray(data?.['PRIORITY FIXES'] ?? data?.analysis?.priorityFixes),
   ].slice(0, 5);
 
@@ -228,21 +346,23 @@ function normalizeUpstream(data, input) {
     analysis: {
       score: overallScore,
       verdict: String(data?.VERDICT || data?.analysis?.verdict || 'הניתוח הושלם.'),
-      summary: String(
+      summary: [
         evidence.hasFrames
-          ? `${evidence.notes.join(' ')} ${data?.analysis?.summary || [...whyItFailed, ...whatToChange].slice(0, 2).join(' ')}`
-          : data?.analysis?.summary ||
-            [...whyItFailed, ...whatToChange].slice(0, 2).join(' ') ||
-            'הניתוח הסתיים ומחזיר המלצות בסיסיות לשיפור הסרטון.',
-      ),
+          ? `${evidence.notes[0]} ${evidence.notes[1]}`
+          : 'לא התקבלו דגימות פריימים, לכן הניתוח הוויזואלי מוגבל.',
+        content.hasContext
+          ? `הניתוח משלב את המטרה/קהל/תיאור שסופקו כדי לבדוק מסר ו-CTA.`
+          : 'לא סופק מספיק קונטקסט על המסר, לכן הדוח לא ממציא תמלול ומתמקד במה שאפשר למדוד.',
+        `הבעיה המרכזית לטפל בה: ${priorityFixes[0] || 'לחזק Hook, קצב ו-CTA.'}`,
+      ].join(' '),
       categories: mergedCategories,
       priorityFixes,
-      whyItFailed: [...evidence.notes.slice(2), ...whyItFailed].slice(0, 8),
-      whatToChange: [...evidence.fixes, ...whatToChange].slice(0, 8),
-      howToImprove,
-      hookSuggestion: String(data?.['HOOK SUGGESTION'] || data?.analysis?.hookSuggestion || ''),
-      scriptSuggestion: String(data?.['SCRIPT SUGGESTION'] || data?.analysis?.scriptSuggestion || ''),
-      platformTips: asArray(data?.['PLATFORM TIPS'] ?? data?.analysis?.platformTips),
+      whyItFailed: recommendations.why,
+      whatToChange: recommendations.changes,
+      howToImprove: recommendations.improve,
+      hookSuggestion: recommendations.hookSuggestion || String(data?.['HOOK SUGGESTION'] || data?.analysis?.hookSuggestion || ''),
+      scriptSuggestion: recommendations.scriptSuggestion || String(data?.['SCRIPT SUGGESTION'] || data?.analysis?.scriptSuggestion || ''),
+      platformTips: recommendations.platformTips,
       timeline: (evidence.timeline.length ? evidence.timeline : normalizeTimeline(data?.TIMELINE ?? data?.analysis?.timeline)),
     },
   };
