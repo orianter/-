@@ -1,3 +1,5 @@
+import { getHealthInfo, runOpenAiAnalysis } from './lib/openaiAnalyze.js';
+
 const SUPABASE_URL = 'https://hgfyokwxcvuufzskvloi.supabase.co';
 const SUPABASE_ANON_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhnZnlva3d4Y3Z1dWZ6c2t2bG9pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE5NTQ3NjIsImV4cCI6MjA5NzUzMDc2Mn0.UfJBN82yipuLKfFkxNSbRRj2nvSpwzPILuB5sj_WDCU';
@@ -518,6 +520,30 @@ function normalizeUpstream(data, input) {
   };
 }
 
+function isStaleAnalysis(data) {
+  const verdict = asText(data?.analysis?.verdict);
+  const summary = asText(data?.analysis?.summary);
+  return (
+    verdict.includes('לא ניתן לנתח')
+    || summary.includes('נדרש פלט תקין')
+    || Number(data?.analysis?.score) === 0
+  );
+}
+
+async function fetchSupabase(method, body) {
+  const upstream = await fetch(functionUrl, {
+    method,
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: method === 'POST' ? JSON.stringify(body || {}) : undefined,
+  });
+  const text = await upstream.text();
+  return { upstream, text };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -533,26 +559,38 @@ export default async function handler(req, res) {
     return;
   }
 
-  try {
-    const upstream = await fetch(functionUrl, {
-      method: req.method,
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        ...(req.method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
-      },
-      body: req.method === 'POST' ? JSON.stringify(req.body || {}) : undefined,
-    });
+  const openaiKey = process.env.OPENAI_API_KEY?.trim();
 
-    const text = await upstream.text();
-    if (upstream.ok && req.method === 'POST') {
-      const parsed = JSON.parse(text);
-      sendJson(res, upstream.status, normalizeUpstream(parsed, req.body || {}));
+  try {
+    if (req.method === 'GET') {
+      if (openaiKey) {
+        sendJson(res, 200, getHealthInfo(openaiKey));
+        return;
+      }
+      const { upstream, text } = await fetchSupabase('GET');
+      res.status(upstream.status).setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json');
+      res.send(text);
       return;
     }
 
-    res.status(upstream.status).setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json');
-    res.send(text);
+    if (openaiKey) {
+      const upstream = await runOpenAiAnalysis(req.body || {}, openaiKey);
+      sendJson(res, 200, normalizeUpstream(upstream, req.body || {}));
+      return;
+    }
+
+    const { upstream, text } = await fetchSupabase('POST', req.body || {});
+    if (upstream.ok) {
+      const parsed = JSON.parse(text);
+      if (!isStaleAnalysis(parsed)) {
+        sendJson(res, upstream.status, normalizeUpstream(parsed, req.body || {}));
+        return;
+      }
+    }
+
+    sendJson(res, 503, {
+      error: 'ניתוח AI לא זמין. הוסף OPENAI_API_KEY ב-Vercel Environment Variables, או פרוס מחדש את Supabase Function analyze.',
+    });
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : 'Proxy error' });
   }

@@ -67,6 +67,8 @@ async function testPost() {
   assert(Array.isArray(data.analysis.priorityFixes) && data.analysis.priorityFixes.length >= 1, 'Missing priorityFixes');
   assert(data.analysis.categories?.hook, 'Missing hook category');
   assert(data.analysis.summary?.length > 20, 'Summary too short');
+  assert(!String(data.analysis.verdict || '').includes('לא ניתן לנתח'), 'Stale AI verdict');
+  assert(!String(data.analysis.summary || '').includes('נדרש פלט תקין'), 'Stale AI summary');
   assert(Array.isArray(data.analysis.whatToChange), 'Missing whatToChange');
   assert(Array.isArray(data.analysis.howToImprove), 'Missing howToImprove');
   assert(data.dataSources?.frameCount >= 1, 'Missing dataSources.frameCount');
