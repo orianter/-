@@ -874,7 +874,9 @@ export default async function handler(req, res) {
   const openaiKey = process.env.OPENAI_API_KEY?.trim();
 
   try {
-    const usage = await resolveFreeUsage(req, req.body || {});
+    const usage = await resolveFreeUsage(req, req.body || {}, {
+      requireFingerprint: req.method === 'POST',
+    });
 
     if (req.method === 'GET') {
       const freeRemaining = usage.allowed ? 1 : 0;

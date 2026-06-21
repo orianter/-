@@ -38,7 +38,23 @@ const STEPS = [
   { label: 'מכין דוח', icon: '📋' },
 ];
 
-const MAX_FILE_MB = 100;
+const FREE_USED_KEY = 'ra_free_used_local';
+
+function hasLocalFreeUsed() {
+  try {
+    return localStorage.getItem(FREE_USED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markLocalFreeUsed() {
+  try {
+    localStorage.setItem(FREE_USED_KEY, '1');
+  } catch {
+    /* ignore */
+  }
+}
 const FRAME_SAMPLE_SIZE = 180;
 const VISION_FRAME_SIZE = 640;
 const VISION_FRAME_SIZE_HOOK = 768;
@@ -437,6 +453,10 @@ export default function AnalyzePage() {
   const stepTimerRef = useRef(null);
 
   useEffect(() => {
+    if (hasLocalFreeUsed()) setFreeBlocked(true);
+  }, []);
+
+  useEffect(() => {
     if (!hasSupabaseConfig) {
       setApiReady({ ok: false, missingConfig: true });
       return undefined;
@@ -453,7 +473,7 @@ export default function AnalyzePage() {
       .then((r) => r.json())
       .then((data) => {
         setApiReady(data);
-        if (data.freeRemaining === 0) setFreeBlocked(true);
+        if (data.freeRemaining === 0 || hasLocalFreeUsed()) setFreeBlocked(true);
       })
       .catch(() => setApiReady({ ok: false, hasApiKey: false, unreachable: true }))
       .finally(() => clearTimeout(timer));
@@ -588,6 +608,8 @@ export default function AnalyzePage() {
       }
       setStepIndex(STEPS.length - 1);
       setResult(data);
+      markLocalFreeUsed();
+      setApiReady((prev) => ({ ...(prev || {}), freeRemaining: 0 }));
       setTimeout(() => {
         document.getElementById('report')?.scrollIntoView({ behavior: 'smooth' });
       }, 300);

@@ -158,7 +158,8 @@ export async function storeUsage({ identityHash, fingerprint, ipHash }) {
   }
 }
 
-export async function resolveFreeUsage(req, body = {}) {
+export async function resolveFreeUsage(req, body = {}, options = {}) {
+  const { requireFingerprint = true } = options;
   if (isFreeUsageDisabled()) {
     return {
       allowed: true,
@@ -172,6 +173,16 @@ export async function resolveFreeUsage(req, body = {}) {
 
   const fingerprint = extractFingerprint(req, body);
   if (!fingerprint) {
+    if (!requireFingerprint) {
+      return {
+        allowed: true,
+        freeRemaining: 1,
+        identityHash: null,
+        fingerprint: null,
+        ipHash: null,
+        enforcement: 'unknown',
+      };
+    }
     return {
       allowed: false,
       freeRemaining: 0,

@@ -45,8 +45,14 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+function makeTestFingerprint() {
+  const stamp = Date.now().toString(16).padStart(12, '0');
+  const rand = Math.random().toString(16).slice(2, 10).padEnd(8, '0');
+  return `${stamp}${rand}-abcdef0123456789`;
+}
+
 async function testGet() {
-  const fp = `smoke-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const fp = makeTestFingerprint();
   const res = await fetch(BASE, {
     method: 'GET',
     headers: { 'X-Device-Fingerprint': fp },
@@ -59,6 +65,20 @@ async function testGet() {
   return { fp, data };
 }
 
+let sessionCookie = '';
+
+function captureCookies(res) {
+  const setCookies = typeof res.headers.getSetCookie === 'function'
+    ? res.headers.getSetCookie()
+    : [];
+  if (setCookies.length) {
+    sessionCookie = setCookies.map((item) => item.split(';')[0]).join('; ');
+    return;
+  }
+  const single = res.headers.get('set-cookie');
+  if (single) sessionCookie = single.split(';')[0];
+}
+
 async function testPost(fingerprint) {
   const res = await fetch(BASE, {
     method: 'POST',
@@ -68,6 +88,7 @@ async function testPost(fingerprint) {
     },
     body: JSON.stringify(mockPayload),
   });
+  captureCookies(res);
   const data = await res.json();
   assert(res.ok, `POST failed: ${res.status} ${data.error || ''}`);
   assert(data.analysis, 'Missing analysis object');
@@ -88,10 +109,28 @@ async function testPost(fingerprint) {
   return data;
 }
 
+async function testSecondPostBlocked(fingerprint) {
+  const res = await fetch(BASE, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Device-Fingerprint': fingerprint,
+      ...(sessionCookie ? { Cookie: sessionCookie } : {}),
+    },
+    body: JSON.stringify(mockPayload),
+  });
+  const data = await res.json();
+  assert(res.status === 402, `Expected 402 on second POST, got ${res.status}`);
+  assert(data.code === 'FREE_LIMIT_EXCEEDED', 'Missing FREE_LIMIT_EXCEEDED code');
+  assert(data.freeRemaining === 0, 'Expected freeRemaining=0');
+  console.log('✓ second POST blocked with 402');
+}
+
 async function main() {
   console.log('Smoke test:', BASE);
   const { fp } = await testGet();
   await testPost(fp);
+  await testSecondPostBlocked(fp);
   console.log('All smoke tests passed.');
 }
 
