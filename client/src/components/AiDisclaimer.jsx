@@ -7,11 +7,11 @@ export function AiDisclaimer({ variant = 'default', className = '' }) {
     <aside
       className={`ai-disclaimer ai-disclaimer--${variant} ${className}`.trim()}
       role="note"
-      aria-label="הבהרה על ניתוח AI"
+      aria-label="הבהרה חשובה"
     >
       <span className="ai-disclaimer__icon" aria-hidden="true">ℹ️</span>
       <div className="ai-disclaimer__body">
-        {variant !== 'short' && <strong>חשוב לדעת — זה ניתוח AI, לא הבטחה</strong>}
+        {variant !== 'short' && <strong>חשוב לדעת — זו המלצה, לא הבטחה</strong>}
         <p>{text}</p>
         {variant === 'default' && (
           <ul className="ai-disclaimer__list">

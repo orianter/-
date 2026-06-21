@@ -12,8 +12,6 @@ import {
   MeasuredEvidence,
   OnScreenText,
   PriorityFixes,
-  ReportCostEstimate,
-  ReportDataSources,
   ScoreRing,
   SpeechMetricsSummary,
   scoreColor,
@@ -31,19 +29,19 @@ import {
 const MAX_FILE_MB = 100;
 
 const PLATFORMS = [
-  { id: 'tiktok', label: 'TikTok', icon: '🎵', desc: 'טרנדים, hook מהיר' },
+  { id: 'tiktok', label: 'TikTok', icon: '🎵', desc: 'טרנדים, פתיחה מהירה' },
   { id: 'reels', label: 'Reels', icon: '📸', desc: 'אסתטיקה, סטוריטלינג' },
   { id: 'both', label: 'שניהם', icon: '✨', desc: 'אופטימיזציה כפולה' },
 ];
 
 const STEPS = [
   { label: 'קורא פרטי סרטון', icon: '📤' },
-  { label: 'דוגם פריימים', icon: '🎞️' },
+  { label: 'בודק את הויזואל', icon: '🎞️' },
   { label: 'מנתח אודיו', icon: '🎧' },
-  { label: 'מתמלל (Whisper)', icon: '🎙️' },
-  { label: 'מכין Vision', icon: '👁️' },
-  { label: 'מנתח AI', icon: '🧠' },
-  { label: 'מכין דוח', icon: '📋' },
+  { label: 'מתמלל דיבור', icon: '🎙️' },
+  { label: 'מזהה טקסט על המסך', icon: '👁️' },
+  { label: 'מכין את הדוח', icon: '🧠' },
+  { label: 'סיכום והמלצות', icon: '📋' },
 ];
 
 const FREE_USED_KEY = 'ra_free_used_local';
@@ -766,8 +764,8 @@ export default function AnalyzePage() {
         <h1>{result ? 'הדוח שלך מוכן' : 'נתח את הסרטון שלך'}</h1>
         <p>
           {result
-            ? 'משוב AI מבוסס דגימות מהסרטון — לא הבטחת תוצאות'
-            : 'העלה רילס, מלא פרטים, וקבל משוב AI עם ציונים והמלצות מדויקות'}
+            ? 'משוב על הסרטון שלך — לא הבטחת תוצאות'
+            : 'העלה רילס, מלא פרטים, וקבל משוב עם ציונים והמלצות מדויקות'}
         </p>
       </div>
 
@@ -866,7 +864,7 @@ export default function AnalyzePage() {
 
       {apiReady && apiReady.missingConfig && (
         <div className="analyze-alert analyze-alert--error">
-          <strong>הגדרות חסרות.</strong> ודא שה-API מוגדר נכון (Vercel / Supabase).
+          <strong>לא ניתן להתחיל ניתוח כרגע.</strong> נסה שוב מאוחר יותר.
         </div>
       )}
 
@@ -878,7 +876,7 @@ export default function AnalyzePage() {
 
       {apiReady && apiReady.demoMode && (
         <div className="analyze-alert analyze-alert--demo">
-          <strong>מצב הדגמה:</strong> תקבל דוח לדוגמה על בסיס נתוני הסרטון (אורך, פורמát). לניתוח AI מלא — ודא ש-OPENAI_API_KEY מוגדר.
+          <strong>דוח לדוגמה:</strong> תקבל משוב בסיסי על בסיס פרטי הסרטון — לא ניתוח מלא.
         </div>
       )}
 
@@ -978,9 +976,9 @@ export default function AnalyzePage() {
           <div className="analyze-checklist">
             <p className="analyze-checklist__title">מה תקבל בדוח:</p>
             <ul>
-              <li>Whisper + מדדי דיבור (Hook, WPM, CTA)</li>
               <li>6 ציונים + ממצאים עם ראיה ותיקון מדויק</li>
-              <li>טקסט על המסך, תסריט משופר ותוכנית שיפור</li>
+              <li>פתיחה, CTA, קצב דיבור וטקסט על המסך</li>
+              <li>תסריט משופר ותוכנית שיפור</li>
             </ul>
           </div>
 
@@ -1149,20 +1147,20 @@ export default function AnalyzePage() {
             {freeBlocked && !verifiedEmail
               ? 'הניתוח החינמי נוצל — אמת אימייל או בחר מסלול'
               : apiReady?.demoMode
-                ? 'נתח את הסרטון (הדגמה) ←'
-                : 'קבל משוב AI לסרטון ←'}
+                ? 'קבל דוח לדוגמה ←'
+                : 'קבל משוב לסרטון ←'}
           </button>
 
           <p id="analyze-help" className="analyze-disclaimer">
             {!file && !linkLoading && 'העלה סרטון או הדבק קישור שיתוף. '}
-            הסרטון/קישור לא נשמר · נשלחים מדדי פריימים, אודיו ל-Whisper, ועד 5 תמונות ל-Vision · הדוח הוא המלצת AI (OpenAI)
+            הסרטון לא נשמר · הדוח הוא המלצה — לא הבטחת תוצאות
           </p>
         </div>
       )}
 
       {result && analysis && (
         <div id="report" className="report" aria-labelledby="report-heading">
-          <h2 id="report-heading" className="visually-hidden">דוח ניתוח AI</h2>
+          <h2 id="report-heading" className="visually-hidden">דוח הניתוח</h2>
           <div className="report__top">
             {result.demo && (
               <div className="report__demo-badge">
@@ -1170,13 +1168,11 @@ export default function AnalyzePage() {
               </div>
             )}
             <AiDisclaimer variant="short" />
-            <ReportDataSources sources={result.dataSources} whisperUsed={result.whisperUsed} />
-            <ReportCostEstimate estimate={result.costEstimate} />
             <SpeechMetricsSummary metrics={result.speechMetrics} />
             <div className="report__verdict-wrap">
               <ScoreRing score={analysis.score} />
               <div className="report__score-block">
-                <p className="report__verdict-label">ציון AI משוער</p>
+                <p className="report__verdict-label">ציון משוער</p>
                 <span
                   className="report__score-badge"
                   style={{ color: scoreColor(analysis.score), borderColor: `${scoreColor(analysis.score)}44` }}
@@ -1252,7 +1248,7 @@ export default function AnalyzePage() {
 
           {analysis.hookSuggestion && (
             <section className="report-section report-section--hook">
-              <h3>פתיחה מוצעת (Hook)</h3>
+              <h3>פתיחה מוצעת</h3>
               <p className="hook-text">"{analysis.hookSuggestion}"</p>
             </section>
           )}
@@ -1266,7 +1262,7 @@ export default function AnalyzePage() {
 
           {result.transcript && !result.transcript.startsWith('(') && (
             <details className="transcript">
-              <summary>תמלול Whisper</summary>
+              <summary>תמלול הדיבור</summary>
               <pre>{result.transcript}</pre>
             </details>
           )}

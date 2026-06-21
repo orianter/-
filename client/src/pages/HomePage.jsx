@@ -9,7 +9,7 @@ import { COMPARISON, TESTIMONIALS, TRUST_STATS } from '../data/content';
 const STEPS = [
   { num: '1', title: 'העלה סרטון', desc: 'גרור רילס עד דקה — MP4, MOV או WebM. הסרטון לא נשמר בשרת', icon: '📤' },
   { num: '2', title: 'ספר מה קורה בו', desc: 'פלטפורמה, מטרה, קהל — וחובה: מה נאמר/כתוב בסרטון (עם שניות)', icon: '📝' },
-  { num: '3', title: 'קבל דוח מלא', desc: 'ציונים, ממצאים עם ראיה, תיקונים, hook ותסריט — הכל בעברית', icon: '📊' },
+  { num: '3', title: 'קבל דוח מלא', desc: 'ציונים, ממצאים עם ראיה, תיקונים, פתיחה ותסריט — הכל בעברית', icon: '📊' },
 ];
 
 const AUDIENCE = [
@@ -36,8 +36,8 @@ export default function HomePage() {
             {' '}— ומה לשנות
           </h1>
           <p className="hero__sub">
-            העלה סרטון וקבל <strong>משוב AI</strong> (OpenAI): 6 ציונים, ממצאים עם ראיה,
-            תוכנית שיפור ותסריט — מבוסס פריימים, אודיו ו-Vision. לא הבטחת ויראליות.
+            העלה סרטון וקבל <strong>משוב מסודר</strong>: 6 ציונים, ממצאים עם ראיה,
+            תוכנית שיפור ותסריט — הכל בעברית. לא הבטחת ויראליות.
           </p>
           <div className="hero__actions">
             <Link to="/analyze" className="btn-hero">
@@ -48,7 +48,7 @@ export default function HomePage() {
           </div>
           <div className="hero__social">
             <span className="hero__stars" aria-hidden="true">★★★★★</span>
-            <span>משוב AI ליוצרי תוכן · דוגמאות למטה</span>
+            <span>משוב ליוצרי תוכן · דוגמאות למטה</span>
           </div>
         </div>
       </section>
@@ -106,7 +106,7 @@ export default function HomePage() {
           <div className="section-head">
             <span className="section-tag">למה זה שווה</span>
             <h2>מניחוש — לכיוון ממוקד</h2>
-            <p>ההבדל בין להעלות בתקווה לבין לקבל משוב AI מסודר לפני/אחרי העלאה</p>
+            <p>ההבדל בין להעלות בתקווה לבין לקבל משוב מסודר לפני/אחרי העלאה</p>
           </div>
           <div className="compare__cols">
             <Reveal className="compare-card compare-card--bad">
@@ -180,7 +180,7 @@ export default function HomePage() {
           <div className="final-cta__glow" />
           <span className="section-tag">מתחילים?</span>
           <h2>מוכן לשפר את הרילס הבא?</h2>
-          <p>העלה סרטון וקבל משוב AI — הניתוח הראשון חינם · לא הבטחת תוצאות</p>
+          <p>העלה סרטון וקבל משוב מסודר — הניתוח הראשון חינם · לא הבטחת תוצאות</p>
           <Link to="/analyze" className="btn-hero">
             נתח את הסרטון שלי
             <span>←</span>

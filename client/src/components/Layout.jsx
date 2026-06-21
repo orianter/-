@@ -78,7 +78,7 @@ export function Footer() {
         <div className="site-footer__brand">
           <span className="navbar__logo" aria-hidden="true">▶</span>
           <strong>Reel Analyzer</strong>
-          <p>משוב AI לסרטוני TikTok ו-Reels — לא הבטחת תוצאות</p>
+          <p>משוב לסרטוני TikTok ו-Reels — לא הבטחת תוצאות</p>
         </div>
         <div className="site-footer__cols">
           <div>
@@ -90,12 +90,12 @@ export function Footer() {
           <div>
             <h4>מידע</h4>
             <a href="/#faq">שאלות נפוצות</a>
-            <a href="/#ai-disclaimer">הבהרה על AI</a>
+            <a href="/#ai-disclaimer">הבהרה חשובה</a>
           </div>
         </div>
       </div>
       <div className="site-footer__bottom">
-        <p>© {new Date().getFullYear()} Reel Analyzer · הסרטון לא נשמר · הדוח הוא המלצת AI (OpenAI)</p>
+        <p>© {new Date().getFullYear()} Reel Analyzer · הסרטון לא נשמר · הדוח הוא המלצה — לא הבטחת תוצאות</p>
       </div>
     </footer>
   );

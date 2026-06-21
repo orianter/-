@@ -31,7 +31,7 @@ export function ScoreRing({ score, size = 'lg' }) {
       className={`score-ring score-ring--${size}`}
       style={{ '--pct': pct, '--color': color }}
       role="img"
-      aria-label={`ציון AI משוער: ${score} מתוך 10`}
+      aria-label={`ציון משוער: ${score} מתוך 10`}
     >
       <div className="score-ring__glow" aria-hidden />
       <div className="score-ring__inner">
@@ -42,48 +42,12 @@ export function ScoreRing({ score, size = 'lg' }) {
   );
 }
 
-export function ReportDataSources({ sources, whisperUsed }) {
-  if (!sources) return null;
-
-  const chips = [
-    sources.frameCount > 0 && { icon: '🎞️', text: `${sources.frameCount} פריימים נדגמו` },
-    sources.visionFrames > 0 && { icon: '👁️', text: `${sources.visionFrames} פריימי Vision` },
-    sources.audioAnalyzed && { icon: '🎧', text: 'ניתוח אודיו' },
-    (sources.hasTranscript || whisperUsed) && { icon: '🎙️', text: 'תמלול Whisper' },
-    sources.hasContentBrief && { icon: '📝', text: 'תוכן מהיוצר' },
-  ].filter(Boolean);
-
-  if (!chips.length) return null;
-
-  return (
-    <div className="report-sources">
-      <span className="report-sources__label">מבוסס על</span>
-      <div className="report-sources__chips">
-        {chips.map((chip) => (
-          <span key={chip.text} className="report-sources__chip">
-            <span>{chip.icon}</span>
-            {chip.text}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
+export function ReportDataSources() {
+  return null;
 }
 
-export function ReportCostEstimate({ estimate }) {
-  if (!estimate?.totalUsd) return null;
-
-  return (
-    <p className="report-cost-estimate">
-      עלות ניתוח משוערת (OpenAI):{' '}
-      <strong>${estimate.totalUsd.toFixed(3)}</strong>
-      {estimate.totalIls ? <> · ~₪{estimate.totalIls.toFixed(2)}</> : null}
-      {' '}
-      <span className="report-cost-estimate__detail">
-        (Whisper ${estimate.whisperUsd?.toFixed(3) || '0'} + GPT ${estimate.gptUsd?.toFixed(3) || '0'})
-      </span>
-    </p>
-  );
+export function ReportCostEstimate() {
+  return null;
 }
 
 export function ImprovementPlan({ priorityFixes, whatToChange, howToImprove }) {
@@ -183,18 +147,19 @@ export function MeasuredEvidence({ items }) {
   if (!items?.length) return null;
 
   const sourceLabels = {
-    frames: 'פריימים',
+    frames: 'ויזואל',
+    visual: 'ויזואל',
     audio: 'אודיו',
     content: 'תוכן',
     digest: 'מדידה',
-    metadata: 'מטא',
+    metadata: 'פרטי סרטון',
   };
 
   return (
     <section className="measured-evidence">
       <div className="measured-evidence__head">
         <h3>נתונים שנמדדו מהסרטון</h3>
-        <p>מספרים אמיתיים מהקובץ — לא הערכות AI</p>
+        <p>מספרים מהסרטון — לא הערכות כלליות</p>
       </div>
       <div className="measured-evidence__grid">
         {items.map((item, i) => (
@@ -249,7 +214,7 @@ export function OnScreenText({ items }) {
     <section className="report-section report-section--onscreen">
       <div className="report-section__head">
         <h3>טקסט על המסך</h3>
-        <p>מה שזוהה בפריימים — בדוק גודל, מיקום ו-Safe Zone</p>
+        <p>מה שזוהה על המסך — בדוק גודל, מיקום וקריאות</p>
       </div>
       <ul>
         {items.map((item, i) => (
@@ -265,7 +230,7 @@ export function SpeechMetricsSummary({ metrics }) {
   return (
     <p className="report-speech-metrics">
       דיבור: {metrics.wordCount} מילים · {metrics.wpm} מילים/דקה
-      {metrics.hookHasSpeech ? ` · Hook מ-${metrics.hookSpeechSec}s` : ' · אין Hook מילולי'}
+      {metrics.hookHasSpeech ? ` · דיבור בפתיחה מ-${metrics.hookSpeechSec}s` : ' · אין דיבור בפתיחה'}
       {metrics.ctaAtSec != null ? ` · CTA ב-${metrics.ctaAtSec}s` : ' · CTA לא זוהה'}
     </p>
   );
@@ -361,7 +326,7 @@ export function buildReportText({ result, platformLabel }) {
 
   if (result.speechMetrics?.hasSpeech) {
     const sm = result.speechMetrics;
-    lines.push(`דיבור: ${sm.wordCount} מילים · ${sm.wpm} WPM · CTA: ${sm.ctaAtSec ?? 'לא'}`, '');
+    lines.push(`דיבור: ${sm.wordCount} מילים · ${sm.wpm} מילים/דקה · CTA: ${sm.ctaAtSec ?? 'לא'}`, '');
   }
 
   if (analysis.onScreenText?.length) {
@@ -386,7 +351,7 @@ export function buildReportText({ result, platformLabel }) {
   }
 
   if (analysis.hookSuggestion) {
-    lines.push(`Hook מוצע: ${analysis.hookSuggestion}`, '');
+    lines.push(`פתיחה מוצעת: ${analysis.hookSuggestion}`, '');
   }
   if (analysis.scriptSuggestion) {
     lines.push(`תסריט משופר:\n${analysis.scriptSuggestion}`);

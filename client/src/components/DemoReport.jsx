@@ -16,7 +16,7 @@ export function DemoReportPreview() {
 
   return (
     <div className="demo-report">
-      <div className="demo-report__badge">דוגמה — לא הסרטון שלך · משוב AI</div>
+      <div className="demo-report__badge">דוגמה — לא הסרטון שלך</div>
       <AiDisclaimer variant="short" />
       <div className="demo-report__top">
         <ScoreRing score={analysis.score} />
@@ -40,7 +40,7 @@ export function DemoReportPreview() {
       </div>
       {analysis.hookSuggestion && (
         <section className="report-section report-section--hook">
-          <h3>פתיחה מוצעת (Hook)</h3>
+          <h3>פתיחה מוצעת</h3>
           <p className="hook-text">"{analysis.hookSuggestion}"</p>
         </section>
       )}

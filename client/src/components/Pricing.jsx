@@ -18,7 +18,7 @@ export function Pricing() {
         <div className="section-head">
           <span className="section-tag">תמחור הוגן</span>
           <h2>מסלול שבועי, חודשי או בודד</h2>
-          <p>הניתוח הראשון חינם · Whisper + GPT-4o · בלי התחייבות</p>
+          <p>הניתוח הראשון חינם · בלי התחייבות</p>
         </div>
 
         <div className="pricing__toggle" role="tablist" aria-label="סוג מסלול">
@@ -83,7 +83,7 @@ export function Pricing() {
           <span className="pricing__guarantee-icon">🛡️</span>
           <div>
             <strong>ניתוח ראשון חינם + 14 יום החזר כספי מלא</strong>
-            <p>נסה בלי כרטיס אשראי. הדוח הוא המלצת AI — לא הבטחת תוצאות. לא אהבת? החזר מלא.</p>
+            <p>נסה בלי כרטיס אשראי. הדוח הוא המלצה — לא הבטחת תוצאות. לא אהבת? החזר מלא.</p>
           </div>
         </div>
       </div>
