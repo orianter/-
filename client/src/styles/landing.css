@@ -401,11 +401,51 @@
   background: linear-gradient(180deg, transparent, rgba(254, 44, 85, 0.04) 50%, transparent);
 }
 
+.pricing__toggle {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.pricing__toggle-btn {
+  padding: 0.55rem 1.25rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s var(--ease);
+}
+
+.pricing__toggle-btn--active {
+  background: linear-gradient(135deg, rgba(254, 44, 85, 0.15), rgba(254, 44, 85, 0.05));
+  border-color: rgba(254, 44, 85, 0.45);
+  color: var(--accent-2);
+}
+
+.pricing__toggle-hint {
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: 0 0 1.75rem;
+}
+
 .pricing__grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
   align-items: stretch;
+}
+
+.pricing__grid--2 { grid-template-columns: repeat(2, 1fr); max-width: 720px; margin-inline: auto; }
+.pricing__grid--3 { grid-template-columns: repeat(3, 1fr); }
+.pricing__grid--4 { grid-template-columns: repeat(4, 1fr); }
+
+.pricing-card--pro {
+  border-color: rgba(37, 244, 238, 0.35);
 }
 
 .pricing-card {

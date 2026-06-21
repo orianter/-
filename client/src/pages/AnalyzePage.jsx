@@ -9,13 +9,17 @@ import {
   DetailedFindings,
   ImprovementPlan,
   MeasuredEvidence,
+  OnScreenText,
   PriorityFixes,
+  ReportCostEstimate,
   ReportDataSources,
   ScoreRing,
+  SpeechMetricsSummary,
   scoreColor,
   scoreVerdictLabel,
   Timeline,
 } from '../components/Report';
+import { extractAudioForWhisper } from '../lib/audioWhisper';
 
 const PLATFORMS = [
   { id: 'tiktok', label: 'TikTok', icon: '🎵', desc: 'טרנדים, hook מהיר' },
@@ -27,6 +31,7 @@ const STEPS = [
   { label: 'קורא פרטי סרטון', icon: '📤' },
   { label: 'דוגם פריימים', icon: '🎞️' },
   { label: 'מנתח אודיו', icon: '🎧' },
+  { label: 'מתמלל (Whisper)', icon: '🎙️' },
   { label: 'מכין Vision', icon: '👁️' },
   { label: 'מנתח AI', icon: '🧠' },
   { label: 'מכין דוח', icon: '📋' },
@@ -201,6 +206,7 @@ async function analyzeAudio(file, durationSec) {
       loudestAtSec: loudest.second,
       openingWeak: hookRms < avgRms * 0.6,
       mostlySilent: silentRatio > 45,
+      rmsWindows: windows.slice(0, 80),
     };
   } catch {
     return { analyzed: false };
@@ -240,6 +246,21 @@ function buildAnalysisDigest(frameMetrics, videoMeta, audioMetrics) {
     else if (audioMetrics.hookSilentRatio > 50) findings.push('יש שקט משמעותי ב-3 השניות הראשונות');
   }
 
+  let longestStaticSec = 0;
+  let staticStart = null;
+  for (let i = 1; i < frameMetrics.length; i += 1) {
+    const prev = frameMetrics[i - 1];
+    const curr = frameMetrics[i];
+    const gap = Number(curr.second) - Number(prev.second);
+    if ((Number(curr.sceneChange) || 0) < 6 && gap >= 1.5) {
+      if (staticStart === null) staticStart = Number(prev.second);
+      longestStaticSec = Math.max(longestStaticSec, Number(curr.second) - staticStart);
+    } else {
+      staticStart = null;
+    }
+  }
+  if (longestStaticSec >= 3.5) findings.push(`קטע סטטי של ~${Math.round(longestStaticSec)} שניות`);
+
   return {
     frameCount: frameMetrics.length,
     durationSec,
@@ -247,6 +268,7 @@ function buildAnalysisDigest(frameMetrics, videoMeta, audioMetrics) {
     isVertical916: near916 === true,
     hookSceneChange: hookChange !== null ? Math.round(hookChange) : null,
     avgSceneChange: avgChange !== null ? Math.round(avgChange) : null,
+    longestStaticSec: longestStaticSec ? Math.round(longestStaticSec * 10) / 10 : null,
     avgBrightness: avgBrightness !== null ? Math.round(avgBrightness) : null,
     avgSharpness: avgSharpness !== null ? Math.round(avgSharpness) : null,
     audio: audioMetrics?.analyzed ? {
@@ -398,6 +420,7 @@ export default function AnalyzePage() {
   const [goal, setGoal] = useState('');
   const [problem, setProblem] = useState('');
   const [audience, setAudience] = useState('');
+  const [niche, setNiche] = useState('');
   const [contentBrief, setContentBrief] = useState('');
   const [loading, setLoading] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
@@ -474,36 +497,42 @@ export default function AnalyzePage() {
     setStepIndex(0);
     stepTimerRef.current = setInterval(() => {
       setStepIndex((i) => Math.min(i + 1, STEPS.length - 1));
-    }, 3500);
+    }, 3200);
 
     try {
       const videoMeta = await readVideoMetadata(file);
       if (videoMeta.durationSec && videoMeta.durationSec > 65) {
         throw new Error('הסרטון ארוך מדי. המקסימום הוא דקה אחת.');
       }
-      const [{ frameMetrics, frameImages }, audioMetrics] = await Promise.all([
+      const [{ frameMetrics, frameImages }, audioMetrics, whisperAudio] = await Promise.all([
         sampleVideoFrames(file, videoMeta.durationSec),
         analyzeAudio(file, videoMeta.durationSec),
+        extractAudioForWhisper(file, videoMeta.durationSec),
       ]);
       const analysisDigest = buildAnalysisDigest(frameMetrics, videoMeta, audioMetrics);
+      const payload = {
+        platform,
+        goal,
+        problem,
+        audience,
+        niche,
+        contentBrief,
+        fileName: file.name,
+        fileType: file.type,
+        fileSizeMb: Math.round((file.size / 1024 / 1024) * 10) / 10,
+        ...videoMeta,
+        frameMetrics,
+        frameImages,
+        audioMetrics,
+        analysisDigest,
+      };
+      if (whisperAudio?.available && whisperAudio.base64) {
+        payload.audioWavBase64 = whisperAudio.base64;
+      }
       const res = await fetch(analyzeFunctionUrl(), {
         method: 'POST',
         headers: supabaseHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-          platform,
-          goal,
-          problem,
-          audience,
-          contentBrief,
-          fileName: file.name,
-          fileType: file.type,
-          fileSizeMb: Math.round((file.size / 1024 / 1024) * 10) / 10,
-          ...videoMeta,
-          frameMetrics,
-          frameImages,
-          audioMetrics,
-          analysisDigest,
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'שגיאה בניתוח');
@@ -527,6 +556,7 @@ export default function AnalyzePage() {
     setGoal('');
     setProblem('');
     setAudience('');
+    setNiche('');
     setContentBrief('');
     setCopied(false);
     setPreview((prev) => {
@@ -639,10 +669,9 @@ export default function AnalyzePage() {
           <div className="analyze-checklist">
             <p className="analyze-checklist__title">מה תקבל בדוח:</p>
             <ul>
-              <li>ציון כללי + 6 ציונים לפי קטגוריה עם הסבר</li>
-              <li>ממצאים עם ראיה (מספרים/שניות) + תיקון מדויק</li>
-              <li>תוכנית שיפור, hook חלופי ותסריט עם שניות</li>
-              <li>נתונים שנמדדו מהסרטון (פריימים + אודיו)</li>
+              <li>Whisper + מדדי דיבור (Hook, WPM, CTA)</li>
+              <li>6 ציונים + ממצאים עם ראיה ותיקון מדויק</li>
+              <li>טקסט על המסך, תסריט משופר ותוכנית שיפור</li>
             </ul>
           </div>
           <div
@@ -743,6 +772,16 @@ export default function AnalyzePage() {
             </label>
 
             <label>
+              נישה / תחום <span className="label-hint">(מומלץ)</span>
+              <input
+                type="text"
+                placeholder="נדל״ן, כושר, SaaS, מסעדות, יופי..."
+                value={niche}
+                onChange={(e) => setNiche(e.target.value)}
+              />
+            </label>
+
+            <label>
               מה לא עבד? <span className="label-hint">(אופציונלי)</span>
               <textarea
                 rows={2}
@@ -782,7 +821,7 @@ export default function AnalyzePage() {
 
           <p id="analyze-help" className="analyze-disclaimer">
             {!file && 'העלה סרטון כדי להפעיל את הניתוח. '}
-            הסרטון המלא לא נשמר · נשלחים מדדי פריימים, אודיו, ועד 5 תמונות ל-Vision · הדוח הוא המלצת AI (OpenAI)
+            הסרטון המלא לא נשמר · נשלחים מדדי פריימים, אודיו ל-Whisper, ועד 5 תמונות ל-Vision · הדוח הוא המלצת AI (OpenAI)
           </p>
         </div>
       )}
@@ -797,7 +836,9 @@ export default function AnalyzePage() {
               </div>
             )}
             <AiDisclaimer variant="short" />
-            <ReportDataSources sources={result.dataSources} />
+            <ReportDataSources sources={result.dataSources} whisperUsed={result.whisperUsed} />
+            <ReportCostEstimate estimate={result.costEstimate} />
+            <SpeechMetricsSummary metrics={result.speechMetrics} />
             <div className="report__verdict-wrap">
               <ScoreRing score={analysis.score} />
               <div className="report__score-block">
@@ -838,6 +879,7 @@ export default function AnalyzePage() {
             howToImprove={analysis.howToImprove}
           />
           <DetailedFindings items={analysis.detailedFindings} />
+          <OnScreenText items={analysis.onScreenText} />
           <MeasuredEvidence items={analysis.measuredEvidence} />
           <PriorityFixes items={analysis.priorityFixes} />
           <CategoryScores categories={analysis.categories} />
@@ -888,9 +930,9 @@ export default function AnalyzePage() {
             </section>
           )}
 
-          {result.transcript && (
+          {result.transcript && !result.transcript.startsWith('(') && (
             <details className="transcript">
-              <summary>תמלול הסרטון</summary>
+              <summary>תמלול Whisper</summary>
               <pre>{result.transcript}</pre>
             </details>
           )}

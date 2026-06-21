@@ -1,23 +1,48 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { PRICING_PLANS } from '../data/content';
+import { PRICING_BILLING, PRICING_PLANS } from '../data/content';
 import { Reveal } from './Reveal';
 
 export function Pricing() {
+  const [billing, setBilling] = useState('monthly');
+
+  const visiblePlans = PRICING_PLANS.filter((plan) => {
+    if (plan.billing === 'once') return true;
+    if (billing === 'weekly') return plan.billing === 'weekly' || plan.billing === 'once';
+    return plan.billing === 'monthly' || plan.billing === 'once';
+  });
+
   return (
     <section id="pricing" className="pricing">
       <div className="section-wrap">
         <div className="section-head">
           <span className="section-tag">תמחור הוגן</span>
-          <h2>מחיר שלא תרגיש</h2>
-          <p>הניתוח הראשון חינם · פחות מקפה לדוח · בלי התחייבות</p>
+          <h2>מסלול שבועי, חודשי או בודד</h2>
+          <p>הניתוח הראשון חינם · Whisper + GPT-4o · בלי התחייבות</p>
         </div>
 
-        <div className="pricing__grid">
-          {PRICING_PLANS.map((plan, i) => (
+        <div className="pricing__toggle" role="tablist" aria-label="סוג מסלול">
+          {(['weekly', 'monthly']).map((key) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={billing === key}
+              className={`pricing__toggle-btn ${billing === key ? 'pricing__toggle-btn--active' : ''}`}
+              onClick={() => setBilling(key)}
+            >
+              {PRICING_BILLING[key].label}
+            </button>
+          ))}
+        </div>
+        <p className="pricing__toggle-hint">{PRICING_BILLING[billing].hint}</p>
+
+        <div className={`pricing__grid pricing__grid--${visiblePlans.length}`}>
+          {visiblePlans.map((plan, i) => (
             <Reveal
               key={plan.id}
               delay={i * 90}
-              className={`pricing-card ${plan.popular ? 'pricing-card--popular' : ''}`}
+              className={`pricing-card ${plan.popular ? 'pricing-card--popular' : ''} ${plan.pro ? 'pricing-card--pro' : ''}`}
             >
               {plan.badge && <span className="pricing-card__badge">{plan.badge}</span>}
               <h3>{plan.name}</h3>

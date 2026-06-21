@@ -1,3 +1,7 @@
+import { formatTranscript, transcribeAudioBase64, estimateAnalysisCostUsd } from './whisper.js';
+import { analyzeSpeechMetrics, formatSpeechMetrics } from './speechMetrics.js';
+import { analyzePacingMetrics, formatPacingMetrics } from './pacingMetrics.js';
+
 const PLATFORM_LABELS = {
   tiktok: 'TikTok',
   reels: 'Instagram Reels',
@@ -125,6 +129,7 @@ function normalizeAnalysis(raw) {
     hookSuggestion: asText(a.hookSuggestion),
     scriptSuggestion: asText(a.scriptSuggestion),
     platformTips: asArray(a.platformTips, 6),
+    onScreenText: asArray(a.onScreenText, 8),
     timeline,
   };
 }
@@ -192,6 +197,7 @@ function formatAnalysisDigest(digest) {
     d.aspectRatio ? `יחס גובה/רוחב: ${d.aspectRatio}${d.isVertical916 ? ' (9:16 ✓)' : ''}` : '',
     d.hookSceneChange != null ? `שינוי ויזואלי ב-Hook: ${d.hookSceneChange}%` : '',
     d.avgSceneChange != null ? `שינוי ויזואלי ממוצע: ${d.avgSceneChange}%` : '',
+    d.longestStaticSec ? `קטע סטטי ארוך: ~${d.longestStaticSec}s` : '',
     d.avgBrightness != null ? `בהירות ממוצעת: ${d.avgBrightness}` : '',
     d.avgSharpness != null ? `חדות ממוצעת: ${d.avgSharpness}` : '',
     findings ? `ממצאים מחושבים מראש:\n- ${findings}` : '',
@@ -216,12 +222,13 @@ function normalizeFrameImages(images) {
     .slice(0, 5);
 }
 
-function buildPrompt(input, hasVision) {
+function buildPrompt(input, hasVision, transcriptText = '') {
   const platform = normalizePlatform(input.platform);
   const platformLabel = PLATFORM_LABELS[platform] || PLATFORM_LABELS.tiktok;
   const goal = asText(input.goal, 'לא צוין').slice(0, 300);
   const problem = asText(input.problem, 'לא צוין').slice(0, 500);
   const audience = asText(input.audience, 'לא צוין').slice(0, 200);
+  const niche = asText(input.niche, 'לא צוין').slice(0, 120);
   const contentBrief = asText(input.contentBrief, 'לא צוין').slice(0, 1200);
   const fileName = asText(input.fileName, 'לא צוין');
   const fileType = asText(input.fileType, 'לא צוין');
@@ -230,6 +237,7 @@ function buildPrompt(input, hasVision) {
   const width = Number(input.width);
   const height = Number(input.height);
   const isVertical = Number.isFinite(width) && Number.isFinite(height) ? height > width : null;
+  const hasTranscript = Boolean(transcriptText && !transcriptText.startsWith('(ללא'));
 
   return `אתה אנליסט בכיר לתוכן ויראלי קצר (${platformLabel}) עם ניסיון של אלפי רילסים.
 תפקידך: ניתוח מקיף, מדויק ומפורט — כל משפט חייב להיות מבוסס על נתון, שניה או פריים ספציפי.
@@ -237,22 +245,33 @@ function buildPrompt(input, hasVision) {
 ## כללי דיוק (חובה מוחלטת)
 1. כל טענה חייבת לכלול ראיה: מספר מדד, שניה, או מה שרואים בפריים/ב-contentBrief
 2. ציין שניות מדויקות (למשל "בשנייה 0.5", "ב-3 השניות הראשונות")
-3. אל תמציא דיבור/טקסט — רק contentBrief ומה שרואים בפריימים
+3. אל תמציא דיבור/טקסט — השתמש בתמלול Whisper, contentBrief ומה שרואים בפריימים
 4. אם חסר מידע — כתוב במפורש "לא ניתן לבדוק X כי Y"
 5. אל תכתוב משפטים גנריים כמו "שפר את ה-Hook" — תגיד בדיוק מה לשנות ולמה
 
 ## מה יש לך
 ${hasVision
-    ? '- תמונות פריים אמיתיות מהסרטון (מצורפות) — תאר מה רואים: פנים, טקסט, תאורה, קומפozיציה, מוצר'
+    ? '- תמונות פריים אמיתיות מהסרטון (מצורפות) — תאר מה רואים: פנים, טקסט על המסך, תאורה, קומפozיציה. **חלץ כל טקסט על המסך** ל-onScreenText'
     : '- אין תמונות — הסתמך על מדדי פריימים שנדגמו מהסרטון בדפדפן'}
-- מדדי אודיו אמיתיים מהקובץ (אין תמלול מילולי)
+- מדדי אודיו אמיתיים מהקובץ
+${hasTranscript ? '- **יש תמלול Whisper אמיתי** — השתמש בו לניתוח מסר, Hook מילולי ו-CTA' : '- אין תמלול — הסתמך על contentBrief ומדדי אודיו'}
+
+## תמלול Whisper (דיבור בסרטון)
+${hasTranscript ? transcriptText : 'לא התקבל תמלול — ניתוח המסר מבוסס על תיאור היוצר בלבד.'}
 
 ## הקשר מהיוצר
 - פלטפורמה: ${platformLabel}
+- נישה/תחום: ${niche}
 - קהל יעד: ${audience}
 - מטרה: ${goal}
 - מה לא עבד (לדעת היוצר): ${problem}
 - תיאור התוכן/מה נאמר: ${contentBrief}
+
+## מדדי דיבור (Whisper — מחושב)
+${formatSpeechMetrics(input.speechMetrics)}
+
+## מדדי קצב (מחושב)
+${formatPacingMetrics(input.pacingMetrics)}
 
 ## מטא-דאטה
 - ${fileName} · ${fileType}
@@ -271,7 +290,7 @@ ${formatAudioMetrics(input.audioMetrics)}
 ## מה לנתח בכל קטגוריה
 1. Hook (0-3 שנ'): מתח, הבטחה, שינוי ויזואלי, אודיו בפתיחה
 2. קצב: שינויי סצנה בין פריימים — האם סטטי?
-3. מסר: הבטחה, ערך, CTA — לפי contentBrief
+3. מסר: הבטחה, ערך, CTA — לפי ${hasTranscript ? 'תמלול + contentBrief' : 'contentBrief'}
 4. ויזואל: בהירות, חדות, קונטרסט, פורמט
 5. אודיו: עוצמה, שקט בפתיחה, מוזיקה/דיבור
 6. התאמה ל-${platformLabel}: hook מהיר, אורך, פורמát אנכי
@@ -324,15 +343,16 @@ ${formatAudioMetrics(input.audioMetrics)}
   "howToImprove": ["<המלצה + למה>"],
   "hookSuggestion": "<פתיחה חלופית>",
   "scriptSuggestion": "<תסריט עם שניות>",
+  "onScreenText": ["<טקסט שרואים על המסך + שניה>", "<...>"],
   "platformTips": ["<טיפ>"],
   "timeline": [{ "second": <number>, "note": "<מה רואים + מה לשנות>" }]
 }`;
 }
 
-function buildMessages(input) {
+function buildMessages(input, transcriptText = '') {
   const frameImages = normalizeFrameImages(input.frameImages);
   const hasVision = frameImages.length > 0;
-  const prompt = buildPrompt(input, hasVision);
+  const prompt = buildPrompt(input, hasVision, transcriptText);
 
   if (!hasVision) {
     return [
@@ -365,12 +385,88 @@ function selectModel(input) {
   return 'gpt-4o-mini';
 }
 
+async function validateAnalysisDraft(analysis, evidenceBlock, apiKey) {
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: 'עורך QA לדוחות ניתוח רילס. הסר או תקן טענות שלא מגובות בראיות. JSON בלבד.',
+          },
+          {
+            role: 'user',
+            content: `בדוק שהדוח תואם לראיות. אם finding/summary/verdict לא מגובים — תקן או הסר.
+
+## ראיות
+${evidenceBlock}
+
+## דraft
+${JSON.stringify(analysis).slice(0, 12000)}
+
+החזר JSON: { "analysis": { ...אותו מבנה... }, "removedClaims": ["..."] }`,
+          },
+        ],
+        max_tokens: 4000,
+        temperature: 0.05,
+      }),
+    });
+    const json = await response.json();
+    if (!response.ok) return analysis;
+    const content = json.choices?.[0]?.message?.content;
+    if (!content) return analysis;
+    const parsed = parseModelJson(content);
+    return parsed?.analysis && typeof parsed.analysis === 'object'
+      ? normalizeAnalysis(parsed.analysis)
+      : analysis;
+  } catch {
+    return analysis;
+  }
+}
+
 export async function runOpenAiAnalysis(input, apiKey) {
   const platform = normalizePlatform(input.platform);
   const durationSec = Math.round((Number(input.durationSec) || 60) * 10) / 10;
   if (durationSec > 65) throw new Error('הסרטון ארוך מדי. המקסימום הוא דקה אחת.');
 
   const model = selectModel(input);
+  const frameImages = normalizeFrameImages(input.frameImages);
+  const hasVision = frameImages.length > 0;
+  let transcriptText = '';
+  let whisperUsed = false;
+  let transcriptionRaw = null;
+
+  const shouldTranscribe = Boolean(
+    input.audioWavBase64
+    && input.audioMetrics?.hasAudio !== false
+    && input.audioMetrics?.analyzed !== false,
+  );
+
+  if (shouldTranscribe) {
+    try {
+      transcriptionRaw = await transcribeAudioBase64(input.audioWavBase64, apiKey);
+      transcriptText = formatTranscript(transcriptionRaw);
+      whisperUsed = Boolean(transcriptionRaw?.text?.trim());
+    } catch (err) {
+      console.warn('Whisper failed:', err instanceof Error ? err.message : err);
+      transcriptText = '(תמלול לא זמין — ניתוח מסר לפי תיאור היוצר)';
+    }
+  } else {
+    transcriptText = '(אין אודיו לתמלול — ניתוח מסר לפי תיאור היוצר)';
+  }
+
+  const speechMetrics = analyzeSpeechMetrics(transcriptionRaw, transcriptText, durationSec);
+  const pacingMetrics = analyzePacingMetrics(input.frameMetrics, input.audioMetrics, durationSec);
+  const enrichedInput = { ...input, speechMetrics, pacingMetrics };
+
+  const costEstimate = estimateAnalysisCostUsd(durationSec, { hasVision, hasWhisper: whisperUsed });
 
   const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -381,7 +477,7 @@ export async function runOpenAiAnalysis(input, apiKey) {
     body: JSON.stringify({
       model,
       response_format: { type: 'json_object' },
-      messages: buildMessages(input),
+      messages: buildMessages(enrichedInput, transcriptText),
       max_tokens: 6000,
       temperature: 0.15,
     }),
@@ -394,6 +490,20 @@ export async function runOpenAiAnalysis(input, apiKey) {
 
   const content = openaiJson.choices?.[0]?.message?.content;
   if (!content) throw new Error('לא התקבלה תשובה מ-OpenAI');
+
+  let analysis = normalizeAnalysis(parseModelJson(content));
+  const hasTranscript = whisperUsed && !transcriptText.startsWith('(');
+  const evidenceBlock = [
+    formatSpeechMetrics(speechMetrics),
+    formatPacingMetrics(pacingMetrics),
+    formatFrameMetrics(input.frameMetrics),
+    formatAudioMetrics(input.audioMetrics),
+    hasTranscript ? `תמלול:\n${transcriptText.slice(0, 2000)}` : '',
+  ].filter(Boolean).join('\n\n');
+
+  if (whisperUsed || hasVision) {
+    analysis = await validateAnalysisDraft(analysis, evidenceBlock, apiKey);
+  }
 
   return {
     demo: false,
@@ -408,11 +518,15 @@ export async function runOpenAiAnalysis(input, apiKey) {
       height: Number(input.height) || null,
       isVertical: Number(input.height) > Number(input.width),
     },
-    transcript: '',
+    transcript: transcriptText,
+    whisperUsed,
+    speechMetrics,
+    pacingMetrics,
+    costEstimate,
     frameTimestamps: Array.isArray(input.frameMetrics)
       ? input.frameMetrics.map((f) => Number(f.second)).filter(Number.isFinite)
       : [],
-    analysis: normalizeAnalysis(parseModelJson(content)),
+    analysis: analysis,
   };
 }
 
@@ -426,5 +540,6 @@ export function getHealthInfo(apiKey) {
     service: apiKey ? 'vercel-openai' : 'supabase-proxy',
     model: 'gpt-4o',
     vision: true,
+    whisper: true,
   };
 }

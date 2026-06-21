@@ -42,13 +42,14 @@ export function ScoreRing({ score, size = 'lg' }) {
   );
 }
 
-export function ReportDataSources({ sources }) {
+export function ReportDataSources({ sources, whisperUsed }) {
   if (!sources) return null;
 
   const chips = [
     sources.frameCount > 0 && { icon: '🎞️', text: `${sources.frameCount} פריימים נדגמו` },
     sources.visionFrames > 0 && { icon: '👁️', text: `${sources.visionFrames} פריימי Vision` },
     sources.audioAnalyzed && { icon: '🎧', text: 'ניתוח אודיו' },
+    (sources.hasTranscript || whisperUsed) && { icon: '🎙️', text: 'תמלול Whisper' },
     sources.hasContentBrief && { icon: '📝', text: 'תוכן מהיוצר' },
   ].filter(Boolean);
 
@@ -66,6 +67,22 @@ export function ReportDataSources({ sources }) {
         ))}
       </div>
     </div>
+  );
+}
+
+export function ReportCostEstimate({ estimate }) {
+  if (!estimate?.totalUsd) return null;
+
+  return (
+    <p className="report-cost-estimate">
+      עלות ניתוח משוערת (OpenAI):{' '}
+      <strong>${estimate.totalUsd.toFixed(3)}</strong>
+      {estimate.totalIls ? <> · ~₪{estimate.totalIls.toFixed(2)}</> : null}
+      {' '}
+      <span className="report-cost-estimate__detail">
+        (Whisper ${estimate.whisperUsd?.toFixed(3) || '0'} + GPT ${estimate.gptUsd?.toFixed(3) || '0'})
+      </span>
+    </p>
   );
 }
 
@@ -226,6 +243,34 @@ export function DetailedFindings({ items }) {
   );
 }
 
+export function OnScreenText({ items }) {
+  if (!items?.length) return null;
+  return (
+    <section className="report-section report-section--onscreen">
+      <div className="report-section__head">
+        <h3>טקסט על המסך</h3>
+        <p>מה שזוהה בפריימים — בדוק גודל, מיקום ו-Safe Zone</p>
+      </div>
+      <ul>
+        {items.map((item, i) => (
+          <li key={i}>{item}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+export function SpeechMetricsSummary({ metrics }) {
+  if (!metrics?.hasSpeech) return null;
+  return (
+    <p className="report-speech-metrics">
+      דיבור: {metrics.wordCount} מילים · {metrics.wpm} מילים/דקה
+      {metrics.hookHasSpeech ? ` · Hook מ-${metrics.hookSpeechSec}s` : ' · אין Hook מילולי'}
+      {metrics.ctaAtSec != null ? ` · CTA ב-${metrics.ctaAtSec}s` : ' · CTA לא זוהה'}
+    </p>
+  );
+}
+
 export function AnalysisSection({ title, items, variant, icon, subtitle }) {
   if (!items?.length) return null;
   return (
@@ -311,6 +356,17 @@ export function buildReportText({ result, platformLabel }) {
       if (item.evidence) lines.push(`   ראיה: ${item.evidence}`);
       if (item.fix) lines.push(`   תיקון: ${item.fix}`);
     });
+    lines.push('');
+  }
+
+  if (result.speechMetrics?.hasSpeech) {
+    const sm = result.speechMetrics;
+    lines.push(`דיבור: ${sm.wordCount} מילים · ${sm.wpm} WPM · CTA: ${sm.ctaAtSec ?? 'לא'}`, '');
+  }
+
+  if (analysis.onScreenText?.length) {
+    lines.push('טקסט על המסך:');
+    analysis.onScreenText.forEach((t) => lines.push(`• ${t}`));
     lines.push('');
   }
 

@@ -225,7 +225,8 @@ function contentScores(content) {
   let message = 5;
   let audio = 6;
   const notes = [];
-  const { goal, problem, audience, contentBrief } = content;
+  const { goal, problem, audience, contentBrief, transcript } = content;
+  const hasTranscript = Boolean(transcript && !transcript.startsWith('('));
 
   if (audience) {
     message += 1;
@@ -237,7 +238,18 @@ function contentScores(content) {
   }
   if (problem) notes.push(`בעיה שדווחה: ${problem}.`);
 
-  if (contentBrief) {
+  if (hasTranscript) {
+    message += 2;
+    notes.push('יש תמלול Whisper — ניתוח המסר מבוסס על דיבור אמיתי מהסרטון.');
+    const lower = transcript.toLowerCase();
+    const hasHook = /[?]/.test(transcript) || /(איך|למה|כמה|מה|טעות|סוד|לפני|אחרי|אל|בלי|אם)/.test(lower);
+    const hasCta = /(שלח|לחץ|כתוב|שמור|עקוב|קנה|דברו|השאירו|תגובה|לינק|ביו|וואטסאפ|dm|direct)/i.test(transcript);
+    if (hasHook) message += 1;
+    else notes.push('בתמלול לא זוהה Hook מילולי ברור (שאלה/מתח).');
+    if (hasCta) message += 1;
+    else notes.push('בתמלול לא זוהה CTA ברור בסוף.');
+    audio += 1;
+  } else if (contentBrief) {
     message += 1;
     const brief = contentBrief.toLowerCase();
     const hasHook = /[?]/.test(contentBrief) || /(איך|למה|כמה|מה|טעות|סוד|לפני|אחרי|אל|בלי|אם)/.test(brief);
@@ -258,7 +270,7 @@ function contentScores(content) {
       notes.push('לא ניתן לבדוק אודיו — ודא שיש מוזיקה/דיבור ברור וכתוביות.');
     }
   } else {
-    notes.push('לא סופק תיאור תוכן — ניתוח המסר מוגבל.');
+    notes.push('לא סופק תיאור תוכן ואין תמלול — ניתוח המסר מוגבל.');
   }
 
   return {
@@ -272,10 +284,12 @@ function contentEvidence(input) {
   const problem = asText(input?.problem);
   const audience = asText(input?.audience);
   const contentBrief = asText(input?.contentBrief);
-  const hasContext = Boolean(goal || problem || audience || contentBrief);
+  const transcript = asText(input?.transcript);
+  const hasTranscript = Boolean(transcript && !transcript.startsWith('('));
+  const hasContext = Boolean(goal || problem || audience || contentBrief || hasTranscript);
   const notes = [];
   const fixes = [];
-  const scores = contentScores({ goal, problem, audience, contentBrief });
+  const scores = contentScores({ goal, problem, audience, contentBrief, transcript });
 
   notes.push(...scores.notes);
 
@@ -287,10 +301,12 @@ function contentEvidence(input) {
     notes.push('לא הוגדרה מטרה עסקית/תוכנית ברורה לסרטון.');
     fixes.push('בחר מטרה אחת לסרטון: צפיות, לידים, מכירה, שמירה, או תגובות. אל תנסה הכל יחד.');
   }
-  if (!contentBrief) {
-    notes.push('לא סופק תיאור של מה נאמר או כתוב בסרטון, לכן הניתוח של המסר מוגבל ולא ימציא תמלול.');
-    fixes.push('הוסף משפט פתיחה, מה רואים על המסך ומה ה-CTA כדי לקבל ניתוח מסר הרבה יותר מדויק.');
-  } else {
+  if (!contentBrief && !hasTranscript) {
+    notes.push('לא סופק תיאור של מה נאמר או כתוב בסרטון, ואין תמלול — הניתוח של המסר מוגבל.');
+    fixes.push('הוסף משפט פתיחה, מה רואים על המסך ומה ה-CTA — או ודא שיש דיבור לתמלול.');
+  } else if (!contentBrief && hasTranscript) {
+    notes.push('אין תיאור מהיוצר, אבל יש תמלול Whisper — ניתוח המסר מבוסס על מה שנאמר בפועל.');
+  } else if (contentBrief) {
     const brief = contentBrief.toLowerCase();
     if (!/[?]/.test(contentBrief) && !/(איך|למה|כמה|מה|טעות|סוד|לפני|אחרי|אל|בלי)/.test(brief)) {
       fixes.push('ה-Hook צריך להכיל מתח ברור: שאלה, טעות נפוצה, הבטחה מדידה או ניגוד לפני/אחרי.');
@@ -387,11 +403,51 @@ function buildMeasuredEvidence(input, evidence, content, audio) {
   return items.slice(0, 16);
 }
 
-function buildMeasuredFindings(input, evidence, content, audio) {
+function buildMeasuredFindings(input, evidence, content, audio, speechMetrics, pacingMetrics) {
   const findings = [];
   const frames = input?.frameMetrics || [];
   const hookFrames = frames.filter((f) => Number(f.second) <= 3);
   const hookChange = average(hookFrames.slice(1), 'sceneChange');
+
+  if (speechMetrics?.hasSpeech) {
+    if (!speechMetrics.hookHasSpeech) {
+      findings.push({
+        area: 'Hook',
+        finding: 'אין דיבור ב-0–3 שניות',
+        evidence: 'תמלול Whisper',
+        impact: 'Hook מילולי חסר — גלילה גבוהה',
+        fix: 'התחל לדבר מיד או הוסף טקסט גדול עם מתח',
+      });
+    }
+    if (speechMetrics.wpm > 185 || speechMetrics.wpm < 95) {
+      findings.push({
+        area: 'מסר',
+        finding: `קצב דיבור ${speechMetrics.wpm} מילים/דקה`,
+        evidence: `${speechMetrics.wordCount} מילים בתמלול`,
+        impact: 'קשה לעקוב או משעמם',
+        fix: speechMetrics.wpm > 185 ? 'האט ופרק למשפטים קצרים' : 'קצר והוסף שינויי קצב',
+      });
+    }
+    if (speechMetrics.ctaAtSec == null) {
+      findings.push({
+        area: 'CTA',
+        finding: 'לא זוהה CTA מילולי',
+        evidence: 'תמלול Whisper',
+        impact: 'צופים לא יודעים מה לעשות',
+        fix: 'סיים בפעולה אחת: שלח/כתוב/שמור/עקוב',
+      });
+    }
+  }
+
+  if (pacingMetrics?.longestStaticSec >= 3.5) {
+    findings.push({
+      area: 'קצב',
+      finding: `קטע סטטי של ~${pacingMetrics.longestStaticSec}s`,
+      evidence: 'מדדי פריימים',
+      impact: 'retention יורד בקטעים סטטיים',
+      fix: 'jump cut / zoom / b-roll כל 1–2 שניות',
+    });
+  }
 
   if (hookChange !== null && hookChange < 7) {
     findings.push({
@@ -423,13 +479,13 @@ function buildMeasuredFindings(input, evidence, content, audio) {
     });
   }
 
-  if (!content.contentBrief) {
+  if (!content.contentBrief && !(speechMetrics?.hasSpeech)) {
     findings.push({
       area: 'מסר',
-      finding: 'לא סופק תיאור תוכן',
-      evidence: 'שדה "מה קורה בסרטון" ריק',
+      finding: 'לא סופק תיאור תוכן ואין תמלול',
+      evidence: 'שדות ריקים',
       impact: 'לא ניתן לבדוק Hook, CTA והבטחה במדויק',
-      fix: 'מלא מה נאמר, טקסט על המסך ו-CTA',
+      fix: 'מלא תיאור או ודא שיש דיבור לתמלול',
     });
   }
 
@@ -464,9 +520,11 @@ function deepRecommendations({ input, evidence, content, audio, upstream }) {
 
   if (!hasAiPriority) {
     priority.push(...evidence.fixes, ...content.fixes, ...audio.fixes);
+    priority.push(...(input?.speechMetrics?.fixes || []), ...(input?.pacingMetrics?.fixes || []));
   }
   if (!hasAiWhy) {
     why.push(...evidence.notes.slice(2), ...content.notes, ...audio.notes);
+    why.push(...(input?.speechMetrics?.findings || []), ...(input?.pacingMetrics?.findings || []));
   }
 
   if (!hasAiPriority && durationSec > 35) {
@@ -548,11 +606,18 @@ function buildCategories(score, sourceCategories) {
 }
 
 function normalizeUpstream(data, input) {
-  const evidence = visualEvidence(input);
-  const content = contentEvidence(input);
-  const audio = audioEvidence(input);
+  const transcript = asText(data?.transcript);
+  const enrichedInput = {
+    ...input,
+    transcript,
+    speechMetrics: data?.speechMetrics || null,
+    pacingMetrics: data?.pacingMetrics || null,
+  };
+  const evidence = visualEvidence(enrichedInput);
+  const content = contentEvidence(enrichedInput);
+  const audio = audioEvidence(enrichedInput);
   const hasVision = Array.isArray(input?.frameImages) && input.frameImages.length > 0;
-  const recommendations = deepRecommendations({ input, evidence, content, audio, upstream: data });
+  const recommendations = deepRecommendations({ input: enrichedInput, evidence, content, audio, upstream: data });
   const aiAnalysis = data?.analysis && typeof data.analysis === 'object' ? data.analysis : {};
   const aiCategoryDetails = aiAnalysis.categoryDetails && typeof aiAnalysis.categoryDetails === 'object'
     ? aiAnalysis.categoryDetails
@@ -571,8 +636,23 @@ function normalizeUpstream(data, input) {
     : 'הפורמט אינו אנכי, וזה פוגע בהתאמה לפלטפורמות קצרות.';
   const scoreOpts = { hasVision, measuredWeight: hasVision ? 0.3 : 0.55 };
   const categoryDetailNote = (key, fallback) => formatCategoryNoteFromDetail(aiCategoryDetails[key], fallback);
-  const measuredEvidence = buildMeasuredEvidence(input, evidence, content, audio);
-  const measuredFindings = buildMeasuredFindings(input, evidence, content, audio);
+  const measuredEvidence = buildMeasuredEvidence(enrichedInput, evidence, content, audio);
+  const measuredFindings = buildMeasuredFindings(
+    enrichedInput,
+    evidence,
+    content,
+    audio,
+    data?.speechMetrics,
+    data?.pacingMetrics,
+  );
+  if (transcript && !transcript.startsWith('(')) {
+    measuredEvidence.unshift({
+      source: 'transcript',
+      label: 'תמלול Whisper',
+      value: transcript.split('\n').slice(0, 3).join(' · ').slice(0, 220),
+      implication: 'ניתוח מסר ו-CTA מבוסס על דיבור אמיתי',
+    });
+  }
 
   const mergedCategories = {
     ...categories,
@@ -602,7 +682,12 @@ function normalizeUpstream(data, input) {
     message: {
       ...categories.message,
       score: pickScore(content.scores.message, categories.message?.score, categories.message?.note, { measuredWeight: 0.4 }),
-      note: categoryDetailNote('message', pickNote(content.contentBrief ? 'נבדק לפי תיאור התוכן.' : '', categories.message?.note, 'חדד הבטחה ו-CTA אחד.', asText(categories.message?.note).length > 28)),
+      note: categoryDetailNote('message', pickNote(
+        transcript && !transcript.startsWith('(') ? 'נבדק לפי תמלול Whisper.' : content.contentBrief ? 'נבדק לפי תיאור התוכן.' : '',
+        categories.message?.note,
+        'חדד הבטחה ו-CTA אחד.',
+        asText(categories.message?.note).length > 28,
+      )),
       detail: aiCategoryDetails.message || null,
     },
     audio: {
@@ -646,13 +731,18 @@ function normalizeUpstream(data, input) {
       height: Number(input?.height) || data?.videoMeta?.height || null,
       isVertical: Number(input?.height) > Number(input?.width),
     },
-    transcript: '',
+    transcript,
+    whisperUsed: Boolean(data?.whisperUsed),
+    speechMetrics: data?.speechMetrics || null,
+    pacingMetrics: data?.pacingMetrics || null,
+    costEstimate: data?.costEstimate || null,
     frameTimestamps: (input?.frameMetrics || []).map((frame) => frame.second).filter(Number.isFinite),
     dataSources: {
       frameCount: (input?.frameMetrics || []).length,
       visionFrames: (input?.frameImages || []).length,
       audioAnalyzed: Boolean(input?.audioMetrics?.analyzed),
       hasContentBrief: Boolean(content.contentBrief),
+      hasTranscript: Boolean(transcript && !transcript.startsWith('(')),
     },
     analysis: {
       score: overallScore,
@@ -662,6 +752,7 @@ function normalizeUpstream(data, input) {
           ? `${evidence.notes[0]} ${evidence.notes[1]}`
           : 'לא התקבלו דגימות פריימים — הניתוח הוויזואלי מוגבל.'),
         hasVision ? `נותחו ${input.frameImages.length} פריימים ב-Vision.` : '',
+        transcript && !transcript.startsWith('(') ? 'נוסף תמלול Whisper לניתוח מסר מדויק.' : '',
         input?.audioMetrics?.analyzed ? 'נותח גם מסלול האודיו מהקובץ.' : '',
         digestFindings.length ? `ממצאים: ${digestFindings.slice(0, 2).join(' · ')}` : '',
         !content.contentBrief ? 'טיפ: מילוי תיאור התוכן משפר משמעותית את דיוק ניתוח המסר.' : '',
@@ -677,6 +768,7 @@ function normalizeUpstream(data, input) {
       timeline,
       measuredEvidence,
       detailedFindings,
+      onScreenText: asArray(aiAnalysis.onScreenText, 8),
     },
   };
 }

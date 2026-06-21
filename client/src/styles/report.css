@@ -139,9 +139,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.65rem;
-  margin-bottom: 1.25rem;
-  padding-bottom: 1.25rem;
-  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.75rem;
 }
 
 .report-sources__label {
@@ -156,6 +154,33 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
+}
+
+.report-cost-estimate {
+  margin: 0 0 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.report-cost-estimate strong {
+  color: var(--accent-2);
+}
+
+.report-cost-estimate__detail {
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+.report-speech-metrics {
+  margin: 0 0 1rem;
+  font-size: 0.82rem;
+  color: var(--accent-2);
+  padding: 0.5rem 0.75rem;
+  background: rgba(37, 244, 238, 0.06);
+  border-radius: var(--radius);
+  border: 1px solid rgba(37, 244, 238, 0.15);
 }
 
 .report-sources__chip {
