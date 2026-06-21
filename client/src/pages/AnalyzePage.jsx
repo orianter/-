@@ -466,8 +466,10 @@ export default function AnalyzePage() {
       if (videoMeta.durationSec && videoMeta.durationSec > 65) {
         throw new Error('הסרטון ארוך מדי. המקסימום הוא דקה אחת.');
       }
-      const { frameMetrics, frameImages } = await sampleVideoFrames(file, videoMeta.durationSec);
-      const audioMetrics = await analyzeAudio(file, videoMeta.durationSec);
+      const [{ frameMetrics, frameImages }, audioMetrics] = await Promise.all([
+        sampleVideoFrames(file, videoMeta.durationSec),
+        analyzeAudio(file, videoMeta.durationSec),
+      ]);
       const analysisDigest = buildAnalysisDigest(frameMetrics, videoMeta, audioMetrics);
       const res = await fetch(analyzeFunctionUrl(), {
         method: 'POST',

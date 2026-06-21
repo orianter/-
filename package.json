@@ -11,6 +11,7 @@
     "dev:client": "cd client && npm run dev",
     "dev:server": "cd server && npm run dev",
     "test": "cd server && npm test",
+    "test:smoke": "node scripts/smoke-analyze.mjs",
     "build": "cd client && npm run build",
     "start": "node server/index.js",
     "postinstall": "npm install --prefix server"
