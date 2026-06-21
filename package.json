@@ -12,7 +12,9 @@
     "dev:server": "cd server && npm run dev",
     "test": "cd server && npm test",
     "test:smoke": "node scripts/smoke-analyze.mjs",
+    "test:comprehensive": "node scripts/test-comprehensive.mjs",
     "test:supabase": "node scripts/check-supabase.mjs",
+    "test:all": "npm test && npm run build && npm run test:smoke && npm run test:comprehensive",
     "build": "cd client && npm run build",
     "start": "node server/index.js",
     "postinstall": "npm install --prefix server"

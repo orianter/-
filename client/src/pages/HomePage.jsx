@@ -6,9 +6,9 @@ import { Reveal } from '../components/Reveal';
 import { COMPARISON, TESTIMONIALS, TRUST_STATS } from '../data/content';
 
 const STEPS = [
-  { num: '1', title: 'העלה סרטון', desc: 'גרור רילס או טיקטוק עד דקה — MP4, MOV או WebM', icon: '📤' },
-  { num: '2', title: 'ספר לנו קצת', desc: 'בחר פלטפורמה, מטרה, ומה לא עבד (אופציונלי)', icon: '📝' },
-  { num: '3', title: 'קבל דוח', desc: 'ציונים, תוכנית שיפור, hook ותסריט — עם הסברים מדויקים', icon: '📊' },
+  { num: '1', title: 'העלה סרטון', desc: 'גרור רילס עד דקה — MP4, MOV או WebM. הסרטון לא נשמר בשרת', icon: '📤' },
+  { num: '2', title: 'ספר מה קורה בו', desc: 'פלטפורמה, מטרה, קהל — וחובה: מה נאמר/כתוב בסרטון (עם שניות)', icon: '📝' },
+  { num: '3', title: 'קבל דוח מלא', desc: 'ציונים, ממצאים עם ראיה, תיקונים, hook ותסריט — הכל בעברית', icon: '📊' },
 ];
 
 const AUDIENCE = [
@@ -35,8 +35,8 @@ export default function HomePage() {
             {' '}— ומה לשנות
           </h1>
           <p className="hero__sub">
-            העלה סרטון וקבל דוח מקצועי: ציונים לפי קטגוריה, תוכנית שיפור,
-            hook חלופי ותסריט משופר — מבוסס פריימים, אודיו ו-Vision AI.
+            העלה סרטון וקבל דוח מקצועי: 6 ציונים, ממצאים עם ראיה מדויקת,
+            תוכנית שיפור, hook חלופי ותסריט — מבוסס פריימים, אודיו ו-Vision AI.
           </p>
           <div className="hero__actions">
             <Link to="/analyze" className="btn-hero">

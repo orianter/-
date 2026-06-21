@@ -342,7 +342,7 @@ function buildMessages(input) {
       { type: 'text', text: `[פריים ב-${img.second.toFixed(1)} שניות — ${img.label}]` },
       {
         type: 'image_url',
-        image_url: { url: `data:image/jpeg;base64,${img.base64}`, detail: img.isHook ? 'high' : 'low' },
+        image_url: { url: `data:image/jpeg;base64,${img.base64}`, detail: img.isHook || img.second <= 3 ? 'high' : 'auto' },
       },
     ]),
   ];
@@ -353,14 +353,19 @@ function buildMessages(input) {
   ];
 }
 
+function selectModel(input) {
+  const frameImages = normalizeFrameImages(input.frameImages);
+  const frameCount = Array.isArray(input.frameMetrics) ? input.frameMetrics.length : 0;
+  if (frameImages.length > 0 || frameCount >= 3) return 'gpt-4o';
+  return 'gpt-4o-mini';
+}
+
 export async function runOpenAiAnalysis(input, apiKey) {
   const platform = normalizePlatform(input.platform);
   const durationSec = Math.round((Number(input.durationSec) || 60) * 10) / 10;
   if (durationSec > 65) throw new Error('הסרטון ארוך מדי. המקסימום הוא דקה אחת.');
 
-  const frameImages = normalizeFrameImages(input.frameImages);
-  const hasRichInput = frameImages.length > 0 || (Array.isArray(input.frameMetrics) && input.frameMetrics.length > 0);
-  const model = frameImages.length > 0 ? 'gpt-4o' : 'gpt-4o-mini';
+  const model = selectModel(input);
 
   const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -373,7 +378,7 @@ export async function runOpenAiAnalysis(input, apiKey) {
       response_format: { type: 'json_object' },
       messages: buildMessages(input),
       max_tokens: 6000,
-      temperature: 0.2,
+      temperature: 0.15,
     }),
   });
 

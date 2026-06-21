@@ -366,6 +366,13 @@ ${audioBlock}
 }`;
 }
 
+function selectModel(input: Record<string, unknown>) {
+  const frameImages = normalizeFrameImages(input.frameImages);
+  const frameCount = Array.isArray(input.frameMetrics) ? input.frameMetrics.length : 0;
+  if (frameImages.length > 0 || frameCount >= 3) return 'gpt-4o';
+  return 'gpt-4o-mini';
+}
+
 function buildMessages(input: Record<string, unknown>) {
   const frameImages = normalizeFrameImages(input.frameImages);
   const hasVision = frameImages.length > 0;
@@ -392,7 +399,7 @@ function buildMessages(input: Record<string, unknown>) {
         type: 'image_url',
         image_url: {
           url: `data:image/jpeg;base64,${img.base64}`,
-          detail: img.isHook ? 'high' : 'low',
+          detail: img.isHook || img.second <= 3 ? 'high' : 'auto',
         },
       },
     ]),
@@ -444,8 +451,7 @@ serve(async (req) => {
     }
 
     const frameImages = normalizeFrameImages(input.frameImages);
-    const hasRichInput = frameImages.length > 0 || Array.isArray(input.frameMetrics) && input.frameMetrics.length > 0;
-    const model = frameImages.length > 0 ? 'gpt-4o' : hasRichInput ? 'gpt-4o-mini' : 'gpt-4o-mini';
+    const model = selectModel(input);
 
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -458,7 +464,7 @@ serve(async (req) => {
         response_format: { type: 'json_object' },
         messages: buildMessages(input),
         max_tokens: 6000,
-        temperature: 0.2,
+        temperature: 0.15,
       }),
     });
 

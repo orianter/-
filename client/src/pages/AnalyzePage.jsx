@@ -568,22 +568,27 @@ export default function AnalyzePage() {
         </p>
       </div>
 
+      {apiReady && apiReady.ok && !apiReady.demoMode && !loading && !result && (
+        <div className="analyze-alert analyze-alert--ok">
+          <strong>✓ המערכת מוכנה.</strong> העלה סרטון, מלא את הפרטים — והניתוח יתחיל. זמן משוער: 30–60 שניות.
+        </div>
+      )}
+
       {apiReady && apiReady.missingConfig && (
         <div className="analyze-alert analyze-alert--error">
-          <strong>Supabase לא מוגדר.</strong> הוסף ל-frontend את <code>VITE_SUPABASE_URL</code> ואת <code>VITE_SUPABASE_ANON_KEY</code>.
+          <strong>הגדרות חסרות.</strong> ודא שה-API מוגדר נכון (Vercel / Supabase).
         </div>
       )}
 
       {apiReady && apiReady.unreachable && (
         <div className="analyze-alert analyze-alert--error">
-          <strong>Supabase Function לא עונה.</strong> ודא שהפונקציה <code>analyze</code> נפרסה ושיש בה secret בשם <code>OPENAI_API_KEY</code>.
+          <strong>שירות הניתוח לא זמין כרגע.</strong> נסה שוב בעוד דקה. אם הבעיה נמשכת — רענן את הדף.
         </div>
       )}
 
       {apiReady && apiReady.demoMode && (
         <div className="analyze-alert analyze-alert--demo">
-          <strong>מצב הדגמה פעיל:</strong> תקבל דוח לדוגמה המבוסס על נתוני הסרטון האמיתיים שלך
-          (אורך, פורמט). לניתוח AI מלא — הוסף את <code>OPENAI_API_KEY</code> ב-Supabase Secrets.
+          <strong>מצב הדגמה:</strong> תקבל דוח לדוגמה על בסיס נתוני הסרטון (אורך, פורמát). לניתוח AI מלא — ודא ש-OPENAI_API_KEY מוגדר.
         </div>
       )}
 
@@ -616,18 +621,28 @@ export default function AnalyzePage() {
       {!result && !loading && (
         <div className="analyze-panel">
           <div className="analyze-tips">
+            <div className="analyze-tip analyze-tip--highlight">
+              <strong>📝 מה קורה בסרטון</strong>
+              הכי חשוב! כתוב עם שניות: "0-2 שנ: אני אומר...", "בסוף: CTA"
+            </div>
             <div className="analyze-tip">
               <strong>🎯 למה הסרטון</strong>
               לידים, מכירות, חשיפה — ממקד את הניתוח
             </div>
             <div className="analyze-tip">
               <strong>👥 למי מיועד</strong>
-              קהל ספציפי = המלצות מדויקות
+              קהל ספציפי = המלצות מדויקות יותר
             </div>
-            <div className="analyze-tip">
-              <strong>📝 מה קורה בסרטון</strong>
-              הכי חשוב לדיוק — Hook, CTA, טקסט
-            </div>
+          </div>
+
+          <div className="analyze-checklist">
+            <p className="analyze-checklist__title">מה תקבל בדוח:</p>
+            <ul>
+              <li>ציון כללי + 6 ציונים לפי קטגוריה עם הסבר</li>
+              <li>ממצאים עם ראיה (מספרים/שניות) + תיקון מדויק</li>
+              <li>תוכנית שיפור, hook חלופי ותסריט עם שניות</li>
+              <li>נתונים שנמדדו מהסרטון (פריימים + אודיו)</li>
+            </ul>
           </div>
           <div
             className={`dropzone ${file ? 'dropzone--has-file' : ''} ${dragActive ? 'dropzone--drag' : ''}`}
