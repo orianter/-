@@ -1,0 +1,95 @@
+import { createProxyToken, verifyProxyToken, buildProxyUrl } from './videoProxyToken.js';
+import { resolveShareUrl, MOBILE_UA } from './resolveVideoUrl.js';
+
+const MAX_BYTES = 100 * 1024 * 1024;
+
+export function sendJson(res, status, body) {
+  res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.send(JSON.stringify(body));
+}
+
+export async function handleResolveVideoPost(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  if (req.method !== 'POST') {
+    sendJson(res, 405, { error: 'Method not allowed' });
+    return;
+  }
+
+  try {
+    const shareUrl = req.body?.url;
+    const resolved = await resolveShareUrl(shareUrl);
+    const token = createProxyToken(resolved.directUrl);
+    sendJson(res, 200, {
+      ok: true,
+      proxyUrl: buildProxyUrl(token, req),
+      fileName: resolved.fileName,
+      contentType: resolved.contentType,
+      platformHint: resolved.platformHint,
+      title: resolved.title,
+      sourceUrl: resolved.sourceUrl,
+    });
+  } catch (err) {
+    sendJson(res, 400, { error: err instanceof Error ? err.message : 'שגיאה בטעינת הקישור' });
+  }
+}
+
+export async function handleVideoProxyGet(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Range');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  if (req.method !== 'GET') {
+    sendJson(res, 405, { error: 'Method not allowed' });
+    return;
+  }
+
+  try {
+    const token = req.query?.token;
+    const directUrl = verifyProxyToken(token);
+
+    const headers = { 'User-Agent': MOBILE_UA };
+    if (req.headers.range) headers.Range = req.headers.range;
+
+    const upstream = await fetch(directUrl, { headers, redirect: 'follow' });
+    if (!upstream.ok && upstream.status !== 206) {
+      sendJson(res, 502, { error: 'לא ניתן להוריד את הסרטון מהמקור' });
+      return;
+    }
+
+    const contentLength = Number(upstream.headers.get('content-length') || 0);
+    if (contentLength > MAX_BYTES) {
+      sendJson(res, 413, { error: 'הסרטון גדול מדי (מקסימום 100MB)' });
+      return;
+    }
+
+    res.status(upstream.status);
+    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'video/mp4');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'private, max-age=600');
+
+    const range = upstream.headers.get('content-range');
+    if (range) res.setHeader('Content-Range', range);
+    const len = upstream.headers.get('content-length');
+    if (len) res.setHeader('Content-Length', len);
+
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    if (buffer.length > MAX_BYTES) {
+      sendJson(res, 413, { error: 'הסרטון גדול מדי (מקסימום 100MB)' });
+      return;
+    }
+    res.send(buffer);
+  } catch (err) {
+    sendJson(res, 400, { error: err instanceof Error ? err.message : 'שגיאה בהורדת הסרטון' });
+  }
+}

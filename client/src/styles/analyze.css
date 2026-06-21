@@ -432,4 +432,65 @@ input:focus, textarea:focus {
 @media (max-width: 640px) {
   .platform-picker__options { grid-template-columns: 1fr; }
   .analyze-tips { grid-template-columns: 1fr; }
+  .url-import__row { flex-direction: column; }
+  .url-import__btn { width: 100%; }
+}
+
+.url-import {
+  margin-bottom: 1.25rem;
+}
+
+.url-import__divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.5rem 0 1rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.url-import__divider::before,
+.url-import__divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.url-import__label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.url-import__row {
+  display: flex;
+  gap: 0.65rem;
+}
+
+.url-import__row input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: inherit;
+  font: inherit;
+}
+
+.url-import__row input:focus-visible {
+  outline: 2px solid rgba(37, 244, 238, 0.45);
+  outline-offset: 2px;
+}
+
+.url-import__hint {
+  margin: 0.55rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.file-name__source {
+  color: var(--accent-2);
 }

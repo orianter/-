@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { analyzeVideo, analyzeVideoDemo } from './analyze.js';
 import { normalizePlatform } from './lib/utils.js';
+import { handleResolveVideoPost, handleVideoProxyGet } from '../api/lib/videoHandlers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -106,6 +107,9 @@ app.get('/api/health', (_req, res) => {
     version: '2.0.0',
   });
 });
+
+app.post('/api/resolve-video', rateLimit, (req, res) => handleResolveVideoPost(req, res));
+app.get('/api/video-proxy', rateLimit, (req, res) => handleVideoProxyGet(req, res));
 
 app.post('/api/analyze', rateLimit, upload.single('video'), async (req, res) => {
   if (!req.file) {

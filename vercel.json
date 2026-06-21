@@ -6,6 +6,12 @@
   "functions": {
     "api/analyze.js": {
       "maxDuration": 90
+    },
+    "api/resolve-video.js": {
+      "maxDuration": 60
+    },
+    "api/video-proxy.js": {
+      "maxDuration": 60
     }
   },
   "rewrites": [

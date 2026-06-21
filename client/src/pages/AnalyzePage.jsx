@@ -20,6 +20,7 @@ import {
   Timeline,
 } from '../components/Report';
 import { extractAudioForWhisper } from '../lib/audioWhisper';
+import { loadVideoFromShareUrl } from '../lib/videoFromUrl';
 
 const PLATFORMS = [
   { id: 'tiktok', label: 'TikTok', icon: '🎵', desc: 'טרנדים, hook מהיר' },
@@ -429,6 +430,9 @@ export default function AnalyzePage() {
   const [apiReady, setApiReady] = useState(null);
   const [copied, setCopied] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [videoLink, setVideoLink] = useState('');
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [videoSource, setVideoSource] = useState('');
   const fileInputRef = useRef(null);
   const stepTimerRef = useRef(null);
 
@@ -477,11 +481,41 @@ export default function AnalyzePage() {
     setFile(selected);
     setError(null);
     setResult(null);
+    setVideoLink('');
+    setVideoSource('upload');
     setPreview((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(selected);
     });
   }, []);
+
+  const handleLoadLink = async () => {
+    if (!videoLink.trim() || linkLoading) return;
+    setLinkLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const { file: loadedFile, platformHint, sourceUrl } = await loadVideoFromShareUrl(videoLink);
+      if (platformHint === 'tiktok') setPlatform('tiktok');
+      if (platformHint === 'reels') setPlatform('reels');
+      setFile(loadedFile);
+      setVideoSource(sourceUrl);
+      setPreview((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(loadedFile);
+      });
+    } catch (err) {
+      setError(err.message);
+      setFile(null);
+      setVideoSource('');
+      setPreview((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+    } finally {
+      setLinkLoading(false);
+    }
+  };
 
   const onDrop = (e) => {
     e.preventDefault();
@@ -558,6 +592,8 @@ export default function AnalyzePage() {
     setAudience('');
     setNiche('');
     setContentBrief('');
+    setVideoLink('');
+    setVideoSource('');
     setCopied(false);
     setPreview((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -661,6 +697,10 @@ export default function AnalyzePage() {
               לידים, מכירות, חשיפה — ממקד את הניתוח
             </div>
             <div className="analyze-tip">
+              <strong>🔗 קישור שיתוף</strong>
+              TikTok / Reels — הדבק קישור במקום להעלות קובץ
+            </div>
+            <div className="analyze-tip">
               <strong>👥 למי מיועד</strong>
               קהל ספציפי = המלצות מדויקות יותר
             </div>
@@ -674,6 +714,44 @@ export default function AnalyzePage() {
               <li>טקסט על המסך, תסריט משופר ותוכנית שיפור</li>
             </ul>
           </div>
+
+          <div className="url-import">
+            <div className="url-import__divider">
+              <span>או הדבק קישור שיתוף</span>
+            </div>
+            <label className="url-import__label" htmlFor="video-link-input">
+              קישור TikTok / Instagram Reels
+            </label>
+            <div className="url-import__row">
+              <input
+                id="video-link-input"
+                type="url"
+                inputMode="url"
+                placeholder="https://www.tiktok.com/... או https://www.instagram.com/reel/..."
+                value={videoLink}
+                onChange={(e) => setVideoLink(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleLoadLink();
+                  }
+                }}
+                disabled={linkLoading || loading}
+              />
+              <button
+                type="button"
+                className="btn-action btn-action--primary url-import__btn"
+                onClick={handleLoadLink}
+                disabled={!videoLink.trim() || linkLoading || loading}
+              >
+                {linkLoading ? 'טוען...' : 'טען סרטון'}
+              </button>
+            </div>
+            <p className="url-import__hint">
+              כמו שיתוף רגיל — הקישור לא נשמר, רק משמש להורדה זמנית לניתוח
+            </p>
+          </div>
+
           <div
             className={`dropzone ${file ? 'dropzone--has-file' : ''} ${dragActive ? 'dropzone--drag' : ''}`}
             onDrop={onDrop}
@@ -723,7 +801,12 @@ export default function AnalyzePage() {
           </div>
 
           {file && (
-            <p className="file-name">{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB</p>
+            <p className="file-name">
+              {file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB
+              {videoSource && videoSource.startsWith('http') && (
+                <span className="file-name__source"> · נטען מקישור</span>
+              )}
+            </p>
           )}
 
           <div className="form-grid">
@@ -812,7 +895,7 @@ export default function AnalyzePage() {
 
           <button
             className="btn-analyze"
-            disabled={!file || !apiReady || apiReady.unreachable || apiReady.missingConfig}
+            disabled={!file || linkLoading || !apiReady || apiReady.unreachable || apiReady.missingConfig}
             onClick={analyze}
             aria-describedby="analyze-help"
           >
@@ -820,8 +903,8 @@ export default function AnalyzePage() {
           </button>
 
           <p id="analyze-help" className="analyze-disclaimer">
-            {!file && 'העלה סרטון כדי להפעיל את הניתוח. '}
-            הסרטון המלא לא נשמר · נשלחים מדדי פריימים, אודיו ל-Whisper, ועד 5 תמונות ל-Vision · הדוח הוא המלצת AI (OpenAI)
+            {!file && !linkLoading && 'העלה סרטון או הדבק קישור שיתוף. '}
+            הסרטון/קישור לא נשמר · נשלחים מדדי פריימים, אודיו ל-Whisper, ועד 5 תמונות ל-Vision · הדוח הוא המלצת AI (OpenAI)
           </p>
         </div>
       )}
