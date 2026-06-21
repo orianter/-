@@ -20,22 +20,19 @@ export async function getAccessToken() {
   return data?.session?.access_token || null;
 }
 
-export async function sendEmailOtp(email) {
-  const { error } = await supabase.auth.signInWithOtp({
-    email: email.trim().toLowerCase(),
-    options: { shouldCreateUser: true },
-  });
-  if (error) throw new Error(error.message);
+function authRedirectUrl() {
+  if (typeof window === 'undefined') return undefined;
+  return `${window.location.origin}/analyze`;
 }
 
-export async function verifyEmailOtp(email, token) {
-  const { data, error } = await supabase.auth.verifyOtp({
-    email: email.trim().toLowerCase(),
-    token: token.trim(),
-    type: 'email',
+export async function signInWithGoogle() {
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: authRedirectUrl(),
+    },
   });
   if (error) throw new Error(error.message);
-  return data?.session;
 }
 
 export async function signOutAuth() {

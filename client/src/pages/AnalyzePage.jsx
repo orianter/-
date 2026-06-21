@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { analyzeFunctionUrl, analyzeHeaders, hasSupabaseConfig } from '../api';
-import { getAccessToken, sendEmailOtp, supabase, verifyEmailOtp } from '../lib/supabaseClient';
+import { signInWithGoogle, signOutAuth, supabase } from '../lib/supabaseClient';
 import { AiDisclaimer } from '../components/AiDisclaimer';
 import {
   AnalysisSection,
@@ -450,8 +450,6 @@ export default function AnalyzePage() {
   const [freeBlocked, setFreeBlocked] = useState(false);
   const [emailLimitExceeded, setEmailLimitExceeded] = useState(false);
   const [requiresEmailAuth, setRequiresEmailAuth] = useState(true);
-  const [authEmail, setAuthEmail] = useState('');
-  const [authCode, setAuthCode] = useState('');
   const [authStep, setAuthStep] = useState('idle');
   const [authError, setAuthError] = useState(null);
   const [verifiedEmail, setVerifiedEmail] = useState('');
@@ -500,6 +498,12 @@ export default function AnalyzePage() {
       if (email) {
         setVerifiedEmail(email);
         setAuthStep('verified');
+        try {
+          const usage = await fetchUsageStatus();
+          applyUsageStatus(usage);
+        } catch {
+          /* health check failed */
+        }
       }
     });
     return () => subscription.unsubscribe();
@@ -683,45 +687,25 @@ export default function AnalyzePage() {
     }
   };
 
-  const handleSendOtp = async () => {
-    const email = authEmail.trim().toLowerCase();
-    if (!email || !email.includes('@')) {
-      setAuthError('הזן כתובת אימייל תקינה');
-      return;
-    }
+  const handleGoogleSignIn = async () => {
     setAuthError(null);
-    setAuthStep('sending');
+    setAuthStep('redirecting');
     try {
-      await sendEmailOtp(email);
-      setAuthStep('code');
+      await signInWithGoogle();
     } catch (err) {
-      setAuthError(err.message || 'שליחת הקוד נכשלה');
-      setAuthStep('email');
+      setAuthError(err.message || 'ההתחברות נכשלה — נסה שוב');
+      setAuthStep('idle');
     }
   };
 
-  const handleVerifyOtp = async () => {
-    const email = authEmail.trim().toLowerCase();
-    const code = authCode.trim();
-    if (!code || code.length < 6) {
-      setAuthError('הזן את הקוד שקיבלת באימייל');
-      return;
-    }
-    setAuthError(null);
-    setAuthStep('verifying');
-    try {
-      await verifyEmailOtp(email, code);
-      const token = await getAccessToken();
-      if (!token) throw new Error('אימות הצליח אך לא נוצרה סשן — נסה שוב');
-      setVerifiedEmail(email);
-      setAuthStep('verified');
-      setError(null);
-      const data = await fetchUsageStatus();
-      applyUsageStatus(data);
-    } catch (err) {
-      setAuthError(err.message || 'קוד לא תקין');
-      setAuthStep('code');
-    }
+  const handleSignOut = async () => {
+    await signOutAuth();
+    setVerifiedEmail('');
+    setAuthStep('idle');
+    setRequiresEmailAuth(true);
+    setEmailLimitExceeded(false);
+    setFreeBlocked(false);
+    setError(null);
   };
 
   const reset = () => {
@@ -777,69 +761,40 @@ export default function AnalyzePage() {
       </div>
 
       {apiReady && apiReady.ok && verifiedEmail && apiReady.freeRemaining === 1 && !apiReady.demoMode && !loading && !result && (
-        <div className="analyze-alert analyze-alert--ok">
-          <strong>✓ מחובר כ-{verifiedEmail}</strong> — יש לך ניתוח חינמי אחד. העלה סרטון והתחל. זמן משוער: 30–60 שניות.
+        <div className="analyze-alert analyze-alert--ok analyze-auth-status">
+          <strong>✓ מחובר/ת כ-{verifiedEmail}</strong> — יש לך ניתוח חינמי אחד. העלה סרטון והתחל.
+          <button type="button" className="analyze-auth-status__signout" onClick={handleSignOut}>
+            התנתק
+          </button>
         </div>
       )}
 
       {!verifiedEmail && !loading && !result && (
-        <div className="analyze-auth" role="region" aria-label="אימות אימייל">
-          <h2 className="analyze-auth__title">אימות אימייל לפני הניתוח</h2>
+        <div className="analyze-auth" role="region" aria-label="התחברות">
+          <h2 className="analyze-auth__title">התחבר כדי לנתח</h2>
           <p className="analyze-auth__desc">
-            ניתוח חינמי אחד לכל אימייל. הזן כתובת אימייל, קבל קוד — ואז תוכל להעלות סרטון ולנתח.
+            ניתוח חינמי אחד לכל חשבון. לחיצה אחת עם Google — בלי סיסמה ובלי קוד באימייל.
           </p>
-          <>
-            <label className="analyze-auth__field">
-              אימייל
-              <input
-                type="email"
-                inputMode="email"
-                autoComplete="email"
-                placeholder="you@example.com"
-                value={authEmail}
-                onChange={(e) => setAuthEmail(e.target.value)}
-                disabled={authStep === 'sending' || authStep === 'verifying' || authStep === 'code'}
-              />
-            </label>
-            {(authStep === 'code' || authStep === 'verifying') && (
-              <label className="analyze-auth__field">
-                קוד מהאימייל
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  placeholder="123456"
-                  value={authCode}
-                  onChange={(e) => setAuthCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                  disabled={authStep === 'verifying'}
-                />
-              </label>
-            )}
-            {authError && (
-              <p className="analyze-auth__error" role="alert">{authError}</p>
-            )}
-            <div className="analyze-auth__actions">
-              {authStep === 'idle' || authStep === 'email' || authStep === 'sending' ? (
-                <button
-                  type="button"
-                  className="btn-action btn-action--primary"
-                  onClick={handleSendOtp}
-                  disabled={authStep === 'sending' || !authEmail.trim()}
-                >
-                  {authStep === 'sending' ? 'שולח...' : 'שלח קוד לאימייל'}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn-action btn-action--primary"
-                  onClick={handleVerifyOtp}
-                  disabled={authStep === 'verifying' || !authCode.trim()}
-                >
-                  {authStep === 'verifying' ? 'מאמת...' : 'אמת קוד'}
-                </button>
-              )}
-            </div>
-          </>
+          {authError && (
+            <p className="analyze-auth__error" role="alert">{authError}</p>
+          )}
+          <button
+            type="button"
+            className="btn-google"
+            onClick={handleGoogleSignIn}
+            disabled={authStep === 'redirecting'}
+          >
+            <span className="btn-google__icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.56 2.95-2.23 5.45-4.76 7.12l7.73 6.01c4.51-4.16 7.11-10.28 7.11-17.6z" />
+                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6.01c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+              </svg>
+            </span>
+            {authStep === 'redirecting' ? 'מעביר ל-Google...' : 'המשך עם Google'}
+          </button>
+          <p className="analyze-auth__fine">בלחיצה את/ה מאשר/ת ניתוח חינמי אחד לחשבון Google שלך.</p>
         </div>
       )}
 
@@ -1157,7 +1112,7 @@ export default function AnalyzePage() {
             aria-describedby="analyze-help"
           >
             {!verifiedEmail
-              ? 'אמת אימייל כדי להתחיל'
+              ? 'התחבר עם Google כדי להתחיל'
               : emailLimitExceeded
                 ? 'הניתוח החינמי נוצל — בחר מסלול'
                 : apiReady?.demoMode
