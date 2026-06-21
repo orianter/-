@@ -1,4 +1,4 @@
--- One free analysis per verified email (after anonymous limit)
+-- One free analysis per verified email
 create table if not exists public.free_analysis_email_usage (
   email_hash text primary key,
   used_at timestamptz not null default now()

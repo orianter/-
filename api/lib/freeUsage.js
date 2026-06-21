@@ -7,8 +7,15 @@ const COOKIE_NAME = 'ra_free_used';
 const FINGERPRINT_HEADER = 'x-device-fingerprint';
 const FREE_LIMIT_MESSAGE = 'הניתוח החינמי כבר נוצל — בחר מסלול';
 const EMAIL_LIMIT_MESSAGE = 'כבר ניצלת את הניתוח החינמי עם כתובת האימייל הזו — בחר מסלול';
+const EMAIL_AUTH_REQUIRED_MESSAGE = 'יש לאמת אימייל לפני הניתוח החינמי';
+const EMAIL_SERVICE_MESSAGE = 'שירות האימות לא מוגדר — נסה שוב מאוחר יותר';
 
-export { FREE_LIMIT_MESSAGE, EMAIL_LIMIT_MESSAGE };
+export {
+  FREE_LIMIT_MESSAGE,
+  EMAIL_LIMIT_MESSAGE,
+  EMAIL_AUTH_REQUIRED_MESSAGE,
+  EMAIL_SERVICE_MESSAGE,
+};
 
 export function isFreeUsageDisabled() {
   return process.env.FREE_USAGE_DISABLED === '1' || process.env.FREE_USAGE_DISABLED === 'true';
@@ -200,28 +207,79 @@ export async function storeUsage({ identityHash, fingerprint, ipHash }) {
   }
 }
 
-async function resolveEmailUsage(req) {
+async function resolveEmailUsage(req, { requireAuth = true } = {}) {
   const email = await getVerifiedEmailFromRequest(req);
-  if (!email) return null;
+  if (!email) {
+    if (!requireAuth) {
+      return {
+        allowed: false,
+        freeRemaining: 0,
+        requiresEmailAuth: true,
+        code: 'EMAIL_AUTH_REQUIRED',
+        enforcement: 'email',
+      };
+    }
+    return {
+      allowed: false,
+      freeRemaining: 0,
+      requiresEmailAuth: true,
+      code: 'EMAIL_AUTH_REQUIRED',
+      error: EMAIL_AUTH_REQUIRED_MESSAGE,
+      status: 401,
+      enforcement: 'email',
+    };
+  }
+
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
+    console.warn('[freeUsage] SUPABASE_SERVICE_ROLE_KEY not set — email usage tracking disabled');
+    if (requireAuth) {
+      return {
+        allowed: false,
+        freeRemaining: 0,
+        code: 'SERVICE_CONFIG',
+        error: EMAIL_SERVICE_MESSAGE,
+        status: 503,
+        email,
+        enforcement: 'email',
+      };
+    }
+    return {
+      allowed: true,
+      freeRemaining: 1,
+      email,
+      emailHash: hashEmail(email),
+      enforcement: 'email-untracked',
+    };
+  }
 
   const emailHash = hashEmail(email);
-  if (SUPABASE_SERVICE_ROLE_KEY) {
-    try {
-      const used = await hasEmailUsage(emailHash);
-      if (used) {
-        return {
-          allowed: false,
-          freeRemaining: 0,
-          code: 'EMAIL_LIMIT_EXCEEDED',
-          error: EMAIL_LIMIT_MESSAGE,
-          status: 402,
-          email,
-          emailHash,
-          enforcement: 'email',
-        };
-      }
-    } catch (err) {
-      console.error('[freeUsage] email lookup failed:', err instanceof Error ? err.message : err);
+  try {
+    const used = await hasEmailUsage(emailHash);
+    if (used) {
+      return {
+        allowed: false,
+        freeRemaining: 0,
+        code: 'EMAIL_LIMIT_EXCEEDED',
+        error: EMAIL_LIMIT_MESSAGE,
+        status: 402,
+        email,
+        emailHash,
+        enforcement: 'email',
+      };
+    }
+  } catch (err) {
+    console.error('[freeUsage] email lookup failed:', err instanceof Error ? err.message : err);
+    if (requireAuth) {
+      return {
+        allowed: false,
+        freeRemaining: 0,
+        code: 'SERVICE_ERROR',
+        error: EMAIL_SERVICE_MESSAGE,
+        status: 503,
+        email,
+        emailHash,
+        enforcement: 'email',
+      };
     }
   }
 
@@ -235,7 +293,7 @@ async function resolveEmailUsage(req) {
 }
 
 export async function resolveFreeUsage(req, body = {}, options = {}) {
-  const { requireFingerprint = true } = options;
+  const { requireAuth = true } = options;
   if (isFreeUsageDisabled()) {
     return {
       allowed: true,
@@ -247,100 +305,18 @@ export async function resolveFreeUsage(req, body = {}, options = {}) {
     };
   }
 
-  const emailUsage = await resolveEmailUsage(req);
-  if (emailUsage) return emailUsage;
-
-  const fingerprint = extractFingerprint(req, body);
-  if (!fingerprint) {
-    if (!requireFingerprint) {
-      return {
-        allowed: true,
-        freeRemaining: 1,
-        identityHash: null,
-        fingerprint: null,
-        ipHash: null,
-        enforcement: 'unknown',
-      };
-    }
-    return {
-      allowed: false,
-      freeRemaining: 0,
-      code: 'FINGERPRINT_REQUIRED',
-      error: 'לא ניתן לזהות את המכשיר. רענן את הדף ונסה שוב.',
-      status: 400,
-      enforcement: 'fingerprint',
-    };
-  }
-
-  const ip = extractClientIp(req);
-  const { identityHash, ipHash } = buildIdentityHash(fingerprint, ip);
-  const cookieHash = readUsageCookie(req);
-
-  const blocked = (source) => ({
-    allowed: false,
-    freeRemaining: 0,
-    code: 'FREE_LIMIT_EXCEEDED',
-    error: FREE_LIMIT_MESSAGE,
-    status: 402,
-    identityHash,
-    fingerprint,
-    ipHash,
-    enforcement: source,
-    requiresEmailAuth: true,
-  });
-
-  if (cookieHash === identityHash) {
-    return blocked('cookie');
-  }
-
-  if (SUPABASE_SERVICE_ROLE_KEY) {
-    try {
-      const used = await hasStoredUsage(identityHash);
-      if (used) return blocked('supabase');
-    } catch (err) {
-      console.error('[freeUsage] lookup failed:', err instanceof Error ? err.message : err);
-    }
-  } else {
-    console.warn('[freeUsage] SUPABASE_SERVICE_ROLE_KEY not set — server-side persistence disabled');
-  }
-
-  return {
-    allowed: true,
-    freeRemaining: 1,
-    identityHash,
-    fingerprint,
-    ipHash,
-    enforcement: SUPABASE_SERVICE_ROLE_KEY ? 'supabase' : 'cookie-only',
-  };
+  return resolveEmailUsage(req, { requireAuth });
 }
 
 export async function markFreeUsageUsed(req, res, usage) {
   if (isFreeUsageDisabled()) return;
-
-  if (usage?.emailHash) {
-    if (!SUPABASE_SERVICE_ROLE_KEY) return;
-    try {
-      await storeEmailUsage(usage.emailHash);
-    } catch (err) {
-      console.error('[freeUsage] email store failed:', err instanceof Error ? err.message : err);
-    }
-    return;
-  }
-
-  if (!usage?.identityHash) return;
-
-  setUsageCookie(res, usage.identityHash);
-
+  if (!usage?.emailHash) return;
   if (!SUPABASE_SERVICE_ROLE_KEY) return;
 
   try {
-    await storeUsage({
-      identityHash: usage.identityHash,
-      fingerprint: usage.fingerprint,
-      ipHash: usage.ipHash,
-    });
+    await storeEmailUsage(usage.emailHash);
   } catch (err) {
-    console.error('[freeUsage] store failed:', err instanceof Error ? err.message : err);
+    console.error('[freeUsage] email store failed:', err instanceof Error ? err.message : err);
   }
 }
 

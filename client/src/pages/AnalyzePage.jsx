@@ -44,22 +44,13 @@ const STEPS = [
   { label: 'סיכום והמלצות', icon: '📋' },
 ];
 
-const FREE_USED_KEY = 'ra_free_used_local';
-
-function hasLocalFreeUsed() {
-  try {
-    return localStorage.getItem(FREE_USED_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function markLocalFreeUsed() {
-  try {
-    localStorage.setItem(FREE_USED_KEY, '1');
-  } catch {
-    /* ignore */
-  }
+async function fetchUsageStatus() {
+  const headers = await analyzeHeaders();
+  const res = await fetch(analyzeFunctionUrl(), {
+    headers,
+    credentials: 'include',
+  });
+  return res.json();
 }
 const FRAME_SAMPLE_SIZE = 180;
 const VISION_FRAME_SIZE = 640;
@@ -457,7 +448,8 @@ export default function AnalyzePage() {
   const [linkLoading, setLinkLoading] = useState(false);
   const [detectedPlatform, setDetectedPlatform] = useState('');
   const [freeBlocked, setFreeBlocked] = useState(false);
-  const [requiresEmailAuth, setRequiresEmailAuth] = useState(false);
+  const [emailLimitExceeded, setEmailLimitExceeded] = useState(false);
+  const [requiresEmailAuth, setRequiresEmailAuth] = useState(true);
   const [authEmail, setAuthEmail] = useState('');
   const [authCode, setAuthCode] = useState('');
   const [authStep, setAuthStep] = useState('idle');
@@ -466,34 +458,52 @@ export default function AnalyzePage() {
   const fileInputRef = useRef(null);
   const stepTimerRef = useRef(null);
 
-  useEffect(() => {
-    if (hasLocalFreeUsed()) {
-      setFreeBlocked(true);
-      setRequiresEmailAuth(true);
+  const applyUsageStatus = useCallback((data) => {
+    setApiReady(data);
+    if (data.freeRemaining === 0) {
+      if (data.requiresEmailAuth) {
+        setRequiresEmailAuth(true);
+        setEmailLimitExceeded(false);
+        setFreeBlocked(false);
+      } else {
+        setEmailLimitExceeded(true);
+        setFreeBlocked(true);
+        setRequiresEmailAuth(false);
+      }
+    } else {
+      setFreeBlocked(false);
+      setEmailLimitExceeded(false);
+      setRequiresEmailAuth(false);
     }
   }, []);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const email = session?.user?.email || '';
       setVerifiedEmail(email);
       if (email) {
-        setRequiresEmailAuth(false);
-        setFreeBlocked(false);
         setAuthStep('verified');
+        try {
+          const data = await fetchUsageStatus();
+          applyUsageStatus(data);
+        } catch {
+          /* health check failed */
+        }
+      } else {
+        setRequiresEmailAuth(true);
+        setEmailLimitExceeded(false);
+        setFreeBlocked(false);
       }
     });
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       const email = data?.session?.user?.email || '';
       if (email) {
         setVerifiedEmail(email);
-        setRequiresEmailAuth(false);
-        setFreeBlocked(false);
         setAuthStep('verified');
       }
     });
     return () => subscription.unsubscribe();
-  }, []);
+  }, [applyUsageStatus]);
 
   useEffect(() => {
     if (!hasSupabaseConfig) {
@@ -510,20 +520,14 @@ export default function AnalyzePage() {
         credentials: 'include',
       }))
       .then((r) => r.json())
-      .then((data) => {
-        setApiReady(data);
-        if (data.freeRemaining === 0 || hasLocalFreeUsed()) {
-          setFreeBlocked(true);
-          if (data.requiresEmailAuth) setRequiresEmailAuth(true);
-        }
-      })
+      .then((data) => applyUsageStatus(data))
       .catch(() => setApiReady({ ok: false, hasApiKey: false, unreachable: true }))
       .finally(() => clearTimeout(timer));
     return () => {
       ctrl.abort();
       clearTimeout(timer);
     };
-  }, []);
+  }, [applyUsageStatus]);
 
   useEffect(() => () => {
     if (preview) URL.revokeObjectURL(preview);
@@ -652,19 +656,22 @@ export default function AnalyzePage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        if (data.code === 'FREE_LIMIT_EXCEEDED' || data.code === 'EMAIL_LIMIT_EXCEEDED' || res.status === 402) {
-          setFreeBlocked(true);
-          setApiReady((prev) => ({ ...(prev || {}), freeRemaining: 0 }));
-          if (data.requiresEmailAuth && data.code === 'FREE_LIMIT_EXCEEDED') {
+        if (data.code === 'EMAIL_LIMIT_EXCEEDED' || data.code === 'EMAIL_AUTH_REQUIRED' || res.status === 402 || res.status === 401) {
+          if (data.code === 'EMAIL_AUTH_REQUIRED') {
             setRequiresEmailAuth(true);
+          } else {
+            setEmailLimitExceeded(true);
+            setFreeBlocked(true);
           }
+          setApiReady((prev) => ({ ...(prev || {}), freeRemaining: 0 }));
         }
         throw new Error(data.error || 'שגיאה בניתוח');
       }
       setStepIndex(STEPS.length - 1);
       setResult(data);
-      markLocalFreeUsed();
       setApiReady((prev) => ({ ...(prev || {}), freeRemaining: 0 }));
+      setEmailLimitExceeded(true);
+      setFreeBlocked(true);
       setTimeout(() => {
         document.getElementById('report')?.scrollIntoView({ behavior: 'smooth' });
       }, 300);
@@ -707,10 +714,10 @@ export default function AnalyzePage() {
       const token = await getAccessToken();
       if (!token) throw new Error('אימות הצליח אך לא נוצרה סשן — נסה שוב');
       setVerifiedEmail(email);
-      setFreeBlocked(false);
-      setRequiresEmailAuth(false);
       setAuthStep('verified');
       setError(null);
+      const data = await fetchUsageStatus();
+      applyUsageStatus(data);
     } catch (err) {
       setAuthError(err.message || 'קוד לא תקין');
       setAuthStep('code');
@@ -769,78 +776,82 @@ export default function AnalyzePage() {
         </p>
       </div>
 
-      {apiReady && apiReady.ok && apiReady.freeRemaining === 1 && !apiReady.demoMode && !loading && !result && !freeBlocked && (
+      {apiReady && apiReady.ok && verifiedEmail && apiReady.freeRemaining === 1 && !apiReady.demoMode && !loading && !result && (
         <div className="analyze-alert analyze-alert--ok">
-          <strong>✓ המערכת מוכנה.</strong> יש לך ניתוח חינמי אחד — העלה סרטון, מלא את הפרטים, והניתוח יתחיל. זמן משוער: 30–60 שניות.
+          <strong>✓ מחובר כ-{verifiedEmail}</strong> — יש לך ניתוח חינמי אחד. העלה סרטון והתחל. זמן משוער: 30–60 שניות.
         </div>
       )}
 
-      {freeBlocked && requiresEmailAuth && !loading && !result && (
+      {!verifiedEmail && !loading && !result && (
         <div className="analyze-auth" role="region" aria-label="אימות אימייל">
-          <h2 className="analyze-auth__title">אימות אימייל לניתוח נוסף</h2>
+          <h2 className="analyze-auth__title">אימות אימייל לפני הניתוח</h2>
           <p className="analyze-auth__desc">
-            הניתוח החינמי נוצל במכשיר זה. לאימות וניתוח נוסף (פעם אחת לכל אימייל) — הזן אימייל וקבל קוד.
+            ניתוח חינמי אחד לכל אימייל. הזן כתובת אימייל, קבל קוד — ואז תוכל להעלות סרטון ולנתח.
           </p>
-          {authStep === 'verified' && verifiedEmail ? (
-            <p className="analyze-auth__ok">✓ מחובר כ-{verifiedEmail} — אפשר לנתח סרטון</p>
-          ) : (
-            <>
+          <>
+            <label className="analyze-auth__field">
+              אימייל
+              <input
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                placeholder="you@example.com"
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
+                disabled={authStep === 'sending' || authStep === 'verifying' || authStep === 'code'}
+              />
+            </label>
+            {(authStep === 'code' || authStep === 'verifying') && (
               <label className="analyze-auth__field">
-                אימייל
+                קוד מהאימייל
                 <input
-                  type="email"
-                  inputMode="email"
-                  autoComplete="email"
-                  placeholder="you@example.com"
-                  value={authEmail}
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  disabled={authStep === 'sending' || authStep === 'verifying' || authStep === 'code'}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="123456"
+                  value={authCode}
+                  onChange={(e) => setAuthCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                  disabled={authStep === 'verifying'}
                 />
               </label>
-              {(authStep === 'code' || authStep === 'verifying') && (
-                <label className="analyze-auth__field">
-                  קוד מהאימייל
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    placeholder="123456"
-                    value={authCode}
-                    onChange={(e) => setAuthCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                    disabled={authStep === 'verifying'}
-                  />
-                </label>
+            )}
+            {authError && (
+              <p className="analyze-auth__error" role="alert">{authError}</p>
+            )}
+            <div className="analyze-auth__actions">
+              {authStep === 'idle' || authStep === 'email' || authStep === 'sending' ? (
+                <button
+                  type="button"
+                  className="btn-action btn-action--primary"
+                  onClick={handleSendOtp}
+                  disabled={authStep === 'sending' || !authEmail.trim()}
+                >
+                  {authStep === 'sending' ? 'שולח...' : 'שלח קוד לאימייל'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-action btn-action--primary"
+                  onClick={handleVerifyOtp}
+                  disabled={authStep === 'verifying' || !authCode.trim()}
+                >
+                  {authStep === 'verifying' ? 'מאמת...' : 'אמת קוד'}
+                </button>
               )}
-              {authError && (
-                <p className="analyze-auth__error" role="alert">{authError}</p>
-              )}
-              <div className="analyze-auth__actions">
-                {authStep === 'idle' || authStep === 'email' || authStep === 'sending' ? (
-                  <button
-                    type="button"
-                    className="btn-action btn-action--primary"
-                    onClick={handleSendOtp}
-                    disabled={authStep === 'sending' || !authEmail.trim()}
-                  >
-                    {authStep === 'sending' ? 'שולח...' : 'שלח קוד לאימייל'}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn-action btn-action--primary"
-                    onClick={handleVerifyOtp}
-                    disabled={authStep === 'verifying' || !authCode.trim()}
-                  >
-                    {authStep === 'verifying' ? 'מאמת...' : 'אמת קוד'}
-                  </button>
-                )}
-              </div>
-            </>
-          )}
+            </div>
+          </>
         </div>
       )}
 
-      {freeBlocked && !requiresEmailAuth && !loading && !result && (
+      {emailLimitExceeded && verifiedEmail && !loading && !result && (
+        <div className="analyze-alert analyze-alert--warn" role="alert">
+          <strong>כבר ניצלת את הניתוח החינמי עם {verifiedEmail}.</strong>{' '}
+          לניתוח נוסף —{' '}
+          <Link to="/#pricing">בחר מסלול</Link>.
+        </div>
+      )}
+
+      {freeBlocked && !requiresEmailAuth && !emailLimitExceeded && !loading && !result && (
         <div className="analyze-alert analyze-alert--warn" role="alert">
           <strong>הניתוח החינמי כבר נוצל.</strong>{' '}
           כדי לנתח סרטון נוסף —{' '}
@@ -848,15 +859,7 @@ export default function AnalyzePage() {
         </div>
       )}
 
-      {freeBlocked && requiresEmailAuth && !loading && !result && (
-        <div className="analyze-alert analyze-alert--warn" role="alert">
-          <strong>הניתוח החינמי במכשיר זה נוצל.</strong>{' '}
-          אמת אימייל למעלה לניתוח נוסף, או{' '}
-          <Link to="/#pricing">בחר מסלול</Link>.
-        </div>
-      )}
-
-      {apiReady && apiReady.ok && apiReady.freeRemaining !== 1 && !apiReady.demoMode && !loading && !result && !freeBlocked && (
+      {apiReady && apiReady.ok && apiReady.freeRemaining !== 1 && !apiReady.demoMode && !loading && !result && !emailLimitExceeded && verifiedEmail && (
         <div className="analyze-alert analyze-alert--ok">
           <strong>✓ המערכת מוכנה.</strong> העלה סרטון, מלא את הפרטים — והניתוח יתחיל. זמן משוער: 30–60 שניות.
         </div>
@@ -906,7 +909,7 @@ export default function AnalyzePage() {
         </div>
       )}
 
-      {!result && !loading && (
+      {!result && !loading && verifiedEmail && !emailLimitExceeded && (
         <div className="analyze-panel">
           <div className="url-import url-import--primary">
             <label className="url-import__label" htmlFor="video-link-input">
@@ -1127,7 +1130,7 @@ export default function AnalyzePage() {
                   💡 שמור מהאפליקציה: TikTok → שיתוף → שמור וידאו · Instagram → ⋯ → שמור — ואז העלה קובץ MP4 למטה.
                 </p>
               )}
-              {freeBlocked && !requiresEmailAuth && (
+              {emailLimitExceeded && (
                 <>
                   {' '}
                   <Link to="/#pricing">בחר מסלול ←</Link>
@@ -1140,13 +1143,24 @@ export default function AnalyzePage() {
 
           <button
             className="btn-analyze"
-            disabled={!file || linkLoading || (freeBlocked && !verifiedEmail) || !apiReady || apiReady.unreachable || apiReady.missingConfig}
+            disabled={
+              !file
+              || linkLoading
+              || !verifiedEmail
+              || emailLimitExceeded
+              || apiReady?.freeRemaining === 0
+              || !apiReady
+              || apiReady.unreachable
+              || apiReady.missingConfig
+            }
             onClick={analyze}
             aria-describedby="analyze-help"
           >
-            {freeBlocked && !verifiedEmail
-              ? 'הניתוח החינמי נוצל — אמת אימייל או בחר מסלול'
-              : apiReady?.demoMode
+            {!verifiedEmail
+              ? 'אמת אימייל כדי להתחיל'
+              : emailLimitExceeded
+                ? 'הניתוח החינמי נוצל — בחר מסלול'
+                : apiReady?.demoMode
                 ? 'קבל דוח לדוגמה ←'
                 : 'קבל משוב לסרטון ←'}
           </button>

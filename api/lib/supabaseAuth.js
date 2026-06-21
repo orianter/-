@@ -1,5 +1,10 @@
 const SUPABASE_URL = (process.env.SUPABASE_URL || 'https://hgfyokwxcvuufzskvloi.supabase.co').replace(/\/$/, '');
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || '';
+const SUPABASE_ANON_KEY = (
+  process.env.SUPABASE_ANON_KEY
+  || process.env.VITE_SUPABASE_ANON_KEY
+  || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhnZnlva3d4Y3Z1dWZ6c2t2bG9pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE5NTQ3NjIsImV4cCI6MjA5NzUzMDc2Mn0.UfJBN82yipuLKfFkxNSbRRj2nvSpwzPILuB5sj_WDCU'
+).trim();
 
 export function extractBearerToken(req) {
   const auth = req?.headers?.authorization || req?.headers?.Authorization;
@@ -10,11 +15,12 @@ export function extractBearerToken(req) {
 
 export async function getVerifiedEmailFromRequest(req) {
   const token = extractBearerToken(req);
-  if (!token || !SUPABASE_SERVICE_ROLE_KEY) return null;
+  const apiKey = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
+  if (!token || !apiKey) return null;
 
   const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
     headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      apikey: apiKey,
       Authorization: `Bearer ${token}`,
     },
   });

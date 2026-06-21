@@ -875,14 +875,15 @@ export default async function handler(req, res) {
 
   try {
     const usage = await resolveFreeUsage(req, req.body || {}, {
-      requireFingerprint: req.method === 'POST',
+      requireAuth: req.method === 'POST',
     });
 
     if (req.method === 'GET') {
       const freeRemaining = usage.allowed ? 1 : 0;
       const healthExtras = {
         freeRemaining,
-        ...(freeRemaining === 0 && usage.requiresEmailAuth ? { requiresEmailAuth: true } : {}),
+        requiresEmailAuth: Boolean(usage.requiresEmailAuth),
+        ...(usage.enforcement === 'email' && usage.email ? { verifiedEmail: true } : {}),
       };
       if (openaiKey) {
         sendJson(res, 200, { ...getHealthInfo(openaiKey), ...healthExtras });

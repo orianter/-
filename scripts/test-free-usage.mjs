@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   buildIdentityHash,
+  EMAIL_AUTH_REQUIRED_MESSAGE,
   extractFingerprint,
   FREE_LIMIT_MESSAGE,
   isFreeUsageDisabled,
@@ -75,13 +76,18 @@ async function testDisabledAllowsUsage() {
   console.log('✓ resolveFreeUsage when disabled');
 }
 
-async function testMissingFingerprintBlocked() {
+async function testMissingEmailRequiresAuth() {
   process.env.FREE_USAGE_DISABLED = '0';
-  const usage = await resolveFreeUsage(mockReq({ fingerprint: '' }), {});
+  const usage = await resolveFreeUsage(mockReq({ fingerprint: 'a1b2c3d4e5f6789012345678abcdef01-12345678abcdef01' }), {});
   assert.equal(usage.allowed, false);
-  assert.equal(usage.status, 400);
+  assert.equal(usage.code, 'EMAIL_AUTH_REQUIRED');
+  assert.equal(usage.status, 401);
+  assert.equal(usage.error, EMAIL_AUTH_REQUIRED_MESSAGE);
+  const health = await resolveFreeUsage(mockReq({ fingerprint: 'a1b2c3d4e5f6789012345678abcdef01-12345678abcdef01' }), {}, { requireAuth: false });
+  assert.equal(health.requiresEmailAuth, true);
+  assert.equal(health.freeRemaining, 0);
   process.env.FREE_USAGE_DISABLED = '1';
-  console.log('✓ missing fingerprint blocked when enabled');
+  console.log('✓ email auth required when enabled');
 }
 
 async function testSignedCookieRoundTrip() {
@@ -107,7 +113,7 @@ async function main() {
   await testIdentityHashStable();
   await testExtractFingerprint();
   await testDisabledAllowsUsage();
-  await testMissingFingerprintBlocked();
+  await testMissingEmailRequiresAuth();
   await testSignedCookieRoundTrip();
   await testFreeLimitMessage();
   console.log('All free usage tests passed.');
