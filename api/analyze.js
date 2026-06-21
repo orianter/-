@@ -530,6 +530,10 @@ function isStaleAnalysis(data) {
   );
 }
 
+function isOpenAiKeyError(message) {
+  return /incorrect api key|invalid api key|invalid_api_key|authentication|401|api key/i.test(String(message));
+}
+
 async function fetchSupabase(method, body) {
   const upstream = await fetch(functionUrl, {
     method,
@@ -542,6 +546,13 @@ async function fetchSupabase(method, body) {
   });
   const text = await upstream.text();
   return { upstream, text };
+}
+
+async function trySupabaseAnalysis(body) {
+  const { upstream, text } = await fetchSupabase('POST', body);
+  if (!upstream.ok) return null;
+  const parsed = JSON.parse(text);
+  return isStaleAnalysis(parsed) ? null : parsed;
 }
 
 export default async function handler(req, res) {
@@ -574,22 +585,27 @@ export default async function handler(req, res) {
     }
 
     if (openaiKey) {
-      const upstream = await runOpenAiAnalysis(req.body || {}, openaiKey);
-      sendJson(res, 200, normalizeUpstream(upstream, req.body || {}));
-      return;
-    }
-
-    const { upstream, text } = await fetchSupabase('POST', req.body || {});
-    if (upstream.ok) {
-      const parsed = JSON.parse(text);
-      if (!isStaleAnalysis(parsed)) {
-        sendJson(res, upstream.status, normalizeUpstream(parsed, req.body || {}));
+      try {
+        const upstream = await runOpenAiAnalysis(req.body || {}, openaiKey);
+        sendJson(res, 200, normalizeUpstream(upstream, req.body || {}));
         return;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!isOpenAiKeyError(message)) {
+          sendJson(res, 500, { error: message });
+          return;
+        }
       }
     }
 
+    const supabaseResult = await trySupabaseAnalysis(req.body || {});
+    if (supabaseResult) {
+      sendJson(res, 200, normalizeUpstream(supabaseResult, req.body || {}));
+      return;
+    }
+
     sendJson(res, 503, {
-      error: 'ניתוח AI לא זמין. הוסף OPENAI_API_KEY ב-Vercel Environment Variables, או פרוס מחדש את Supabase Function analyze.',
+      error: 'ניתוח AI לא זמין. הוסף OPENAI_API_KEY תקין ב-Vercel Environment Variables, או פרוס מחדש את Supabase Function analyze.',
     });
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : 'Proxy error' });
