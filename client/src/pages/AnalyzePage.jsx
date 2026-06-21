@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { analyzeFunctionUrl, analyzeHeaders, hasSupabaseConfig } from '../api';
+import { getAccessToken, sendEmailOtp, supabase, verifyEmailOtp } from '../lib/supabaseClient';
 import { AiDisclaimer } from '../components/AiDisclaimer';
 import {
   AnalysisSection,
@@ -20,7 +21,14 @@ import {
   Timeline,
 } from '../components/Report';
 import { extractAudioForWhisper } from '../lib/audioWhisper';
-import { loadVideoFromShareUrl } from '../lib/videoFromUrl';
+import {
+  detectSharePlatform,
+  extractShareUrlFromText,
+  loadVideoFromShareUrl,
+  sharePlatformLabel,
+} from '../lib/videoFromUrl';
+
+const MAX_FILE_MB = 100;
 
 const PLATFORMS = [
   { id: 'tiktok', label: 'TikTok', icon: '🎵', desc: 'טרנדים, hook מהיר' },
@@ -447,13 +455,46 @@ export default function AnalyzePage() {
   const [copied, setCopied] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [videoLink, setVideoLink] = useState('');
+  const [videoSource, setVideoSource] = useState('');
   const [linkLoading, setLinkLoading] = useState(false);
+  const [detectedPlatform, setDetectedPlatform] = useState('');
   const [freeBlocked, setFreeBlocked] = useState(false);
+  const [requiresEmailAuth, setRequiresEmailAuth] = useState(false);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authCode, setAuthCode] = useState('');
+  const [authStep, setAuthStep] = useState('idle');
+  const [authError, setAuthError] = useState(null);
+  const [verifiedEmail, setVerifiedEmail] = useState('');
   const fileInputRef = useRef(null);
   const stepTimerRef = useRef(null);
 
   useEffect(() => {
-    if (hasLocalFreeUsed()) setFreeBlocked(true);
+    if (hasLocalFreeUsed()) {
+      setFreeBlocked(true);
+      setRequiresEmailAuth(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const email = session?.user?.email || '';
+      setVerifiedEmail(email);
+      if (email) {
+        setRequiresEmailAuth(false);
+        setFreeBlocked(false);
+        setAuthStep('verified');
+      }
+    });
+    supabase.auth.getSession().then(({ data }) => {
+      const email = data?.session?.user?.email || '';
+      if (email) {
+        setVerifiedEmail(email);
+        setRequiresEmailAuth(false);
+        setFreeBlocked(false);
+        setAuthStep('verified');
+      }
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -473,7 +514,10 @@ export default function AnalyzePage() {
       .then((r) => r.json())
       .then((data) => {
         setApiReady(data);
-        if (data.freeRemaining === 0 || hasLocalFreeUsed()) setFreeBlocked(true);
+        if (data.freeRemaining === 0 || hasLocalFreeUsed()) {
+          setFreeBlocked(true);
+          if (data.requiresEmailAuth) setRequiresEmailAuth(true);
+        }
       })
       .catch(() => setApiReady({ ok: false, hasApiKey: false, unreachable: true }))
       .finally(() => clearTimeout(timer));
@@ -517,13 +561,23 @@ export default function AnalyzePage() {
     });
   }, []);
 
+  const handleLinkChange = (value) => {
+    setVideoLink(value);
+    const cleaned = extractShareUrlFromText(value);
+    const platform = detectSharePlatform(cleaned);
+    setDetectedPlatform(platform !== 'unknown' ? platform : '');
+    if (platform === 'tiktok') setPlatform('tiktok');
+    if (platform === 'instagram') setPlatform('reels');
+  };
+
   const handleLoadLink = async () => {
-    if (!videoLink.trim() || linkLoading) return;
+    const cleaned = extractShareUrlFromText(videoLink);
+    if (!cleaned || linkLoading) return;
     setLinkLoading(true);
     setError(null);
     setResult(null);
     try {
-      const { file: loadedFile, platformHint, sourceUrl } = await loadVideoFromShareUrl(videoLink);
+      const { file: loadedFile, platformHint, sourceUrl } = await loadVideoFromShareUrl(cleaned);
       if (platformHint === 'tiktok') setPlatform('tiktok');
       if (platformHint === 'reels') setPlatform('reels');
       setFile(loadedFile);
@@ -600,9 +654,12 @@ export default function AnalyzePage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        if (data.code === 'FREE_LIMIT_EXCEEDED' || res.status === 402) {
+        if (data.code === 'FREE_LIMIT_EXCEEDED' || data.code === 'EMAIL_LIMIT_EXCEEDED' || res.status === 402) {
           setFreeBlocked(true);
           setApiReady((prev) => ({ ...(prev || {}), freeRemaining: 0 }));
+          if (data.requiresEmailAuth && data.code === 'FREE_LIMIT_EXCEEDED') {
+            setRequiresEmailAuth(true);
+          }
         }
         throw new Error(data.error || 'שגיאה בניתוח');
       }
@@ -618,6 +675,47 @@ export default function AnalyzePage() {
     } finally {
       clearStepTimer();
       setLoading(false);
+    }
+  };
+
+  const handleSendOtp = async () => {
+    const email = authEmail.trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      setAuthError('הזן כתובת אימייל תקינה');
+      return;
+    }
+    setAuthError(null);
+    setAuthStep('sending');
+    try {
+      await sendEmailOtp(email);
+      setAuthStep('code');
+    } catch (err) {
+      setAuthError(err.message || 'שליחת הקוד נכשלה');
+      setAuthStep('email');
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    const email = authEmail.trim().toLowerCase();
+    const code = authCode.trim();
+    if (!code || code.length < 6) {
+      setAuthError('הזן את הקוד שקיבלת באימייל');
+      return;
+    }
+    setAuthError(null);
+    setAuthStep('verifying');
+    try {
+      await verifyEmailOtp(email, code);
+      const token = await getAccessToken();
+      if (!token) throw new Error('אימות הצליח אך לא נוצרה סשן — נסה שוב');
+      setVerifiedEmail(email);
+      setFreeBlocked(false);
+      setRequiresEmailAuth(false);
+      setAuthStep('verified');
+      setError(null);
+    } catch (err) {
+      setAuthError(err.message || 'קוד לא תקין');
+      setAuthStep('code');
     }
   };
 
@@ -679,10 +777,83 @@ export default function AnalyzePage() {
         </div>
       )}
 
-      {freeBlocked && !loading && !result && (
+      {freeBlocked && requiresEmailAuth && !loading && !result && (
+        <div className="analyze-auth" role="region" aria-label="אימות אימייל">
+          <h2 className="analyze-auth__title">אימות אימייל לניתוח נוסף</h2>
+          <p className="analyze-auth__desc">
+            הניתוח החינמי נוצל במכשיר זה. לאימות וניתוח נוסף (פעם אחת לכל אימייל) — הזן אימייל וקבל קוד.
+          </p>
+          {authStep === 'verified' && verifiedEmail ? (
+            <p className="analyze-auth__ok">✓ מחובר כ-{verifiedEmail} — אפשר לנתח סרטון</p>
+          ) : (
+            <>
+              <label className="analyze-auth__field">
+                אימייל
+                <input
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  disabled={authStep === 'sending' || authStep === 'verifying' || authStep === 'code'}
+                />
+              </label>
+              {(authStep === 'code' || authStep === 'verifying') && (
+                <label className="analyze-auth__field">
+                  קוד מהאימייל
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="123456"
+                    value={authCode}
+                    onChange={(e) => setAuthCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                    disabled={authStep === 'verifying'}
+                  />
+                </label>
+              )}
+              {authError && (
+                <p className="analyze-auth__error" role="alert">{authError}</p>
+              )}
+              <div className="analyze-auth__actions">
+                {authStep === 'idle' || authStep === 'email' || authStep === 'sending' ? (
+                  <button
+                    type="button"
+                    className="btn-action btn-action--primary"
+                    onClick={handleSendOtp}
+                    disabled={authStep === 'sending' || !authEmail.trim()}
+                  >
+                    {authStep === 'sending' ? 'שולח...' : 'שלח קוד לאימייל'}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-action btn-action--primary"
+                    onClick={handleVerifyOtp}
+                    disabled={authStep === 'verifying' || !authCode.trim()}
+                  >
+                    {authStep === 'verifying' ? 'מאמת...' : 'אמת קוד'}
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {freeBlocked && !requiresEmailAuth && !loading && !result && (
         <div className="analyze-alert analyze-alert--warn" role="alert">
           <strong>הניתוח החינמי כבר נוצל.</strong>{' '}
           כדי לנתח סרטון נוסף —{' '}
+          <Link to="/#pricing">בחר מסלול</Link>.
+        </div>
+      )}
+
+      {freeBlocked && requiresEmailAuth && !loading && !result && (
+        <div className="analyze-alert analyze-alert--warn" role="alert">
+          <strong>הניתוח החינמי במכשיר זה נוצל.</strong>{' '}
+          אמת אימייל למעלה לניתוח נוסף, או{' '}
           <Link to="/#pricing">בחר מסלול</Link>.
         </div>
       )}
@@ -739,6 +910,52 @@ export default function AnalyzePage() {
 
       {!result && !loading && (
         <div className="analyze-panel">
+          <div className="url-import url-import--primary">
+            <label className="url-import__label" htmlFor="video-link-input">
+              🔗 הדבק קישור שיתוף (TikTok / Reels)
+            </label>
+            <div className="url-import__row">
+              <input
+                id="video-link-input"
+                type="text"
+                inputMode="url"
+                placeholder="הדבק כאן — גם מתוך הודעת WhatsApp"
+                value={videoLink}
+                onChange={(e) => handleLinkChange(e.target.value)}
+                onPaste={(e) => {
+                  const pasted = e.clipboardData.getData('text');
+                  if (pasted) {
+                    e.preventDefault();
+                    handleLinkChange(pasted);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleLoadLink();
+                  }
+                }}
+                disabled={linkLoading || loading}
+              />
+              <button
+                type="button"
+                className="btn-action btn-action--primary url-import__btn"
+                onClick={handleLoadLink}
+                disabled={!extractShareUrlFromText(videoLink) || linkLoading || loading}
+              >
+                {linkLoading ? 'טוען...' : 'טען סרטון'}
+              </button>
+            </div>
+            {detectedPlatform && (
+              <p className="url-import__detected">
+                זוהה: {sharePlatformLabel(videoLink)}
+              </p>
+            )}
+            <p className="url-import__hint">
+              אם הקישור לא עובד — שמור מהאפליקציה (שיתוף → שמור/הורד) והעלה למטה
+            </p>
+          </div>
+
           <div className="analyze-tips">
             <div className="analyze-tip analyze-tip--highlight">
               <strong>📝 מה קורה בסרטון</strong>
@@ -767,41 +984,8 @@ export default function AnalyzePage() {
             </ul>
           </div>
 
-          <div className="url-import">
-            <div className="url-import__divider">
-              <span>או הדבק קישור שיתוף</span>
-            </div>
-            <label className="url-import__label" htmlFor="video-link-input">
-              קישור TikTok / Instagram Reels
-            </label>
-            <div className="url-import__row">
-              <input
-                id="video-link-input"
-                type="url"
-                inputMode="url"
-                placeholder="https://www.tiktok.com/... או https://www.instagram.com/reel/..."
-                value={videoLink}
-                onChange={(e) => setVideoLink(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleLoadLink();
-                  }
-                }}
-                disabled={linkLoading || loading}
-              />
-              <button
-                type="button"
-                className="btn-action btn-action--primary url-import__btn"
-                onClick={handleLoadLink}
-                disabled={!videoLink.trim() || linkLoading || loading}
-              >
-                {linkLoading ? 'טוען...' : 'טען סרטון'}
-              </button>
-            </div>
-            <p className="url-import__hint">
-              כמו שיתוף רגיל — הקישור לא נשמר, רק משמש להורדה זמנית לניתוח
-            </p>
+          <div className="url-import__divider">
+            <span>או העלה קובץ מהמכשיר</span>
           </div>
 
           <div
@@ -940,7 +1124,12 @@ export default function AnalyzePage() {
           {error && (
             <div className="analyze-alert analyze-alert--error" role="alert" aria-live="assertive">
               {error}
-              {freeBlocked && (
+              {(error.includes('TikTok') || error.includes('Instagram') || error.includes('העלה') || error.includes('שמור')) && (
+                <p className="analyze-error-fallback">
+                  💡 שמור מהאפליקציה: TikTok → שיתוף → שמור וידאו · Instagram → ⋯ → שמור — ואז העלה קובץ MP4 למטה.
+                </p>
+              )}
+              {freeBlocked && !requiresEmailAuth && (
                 <>
                   {' '}
                   <Link to="/#pricing">בחר מסלול ←</Link>
@@ -953,12 +1142,12 @@ export default function AnalyzePage() {
 
           <button
             className="btn-analyze"
-            disabled={!file || linkLoading || freeBlocked || !apiReady || apiReady.unreachable || apiReady.missingConfig}
+            disabled={!file || linkLoading || (freeBlocked && !verifiedEmail) || !apiReady || apiReady.unreachable || apiReady.missingConfig}
             onClick={analyze}
             aria-describedby="analyze-help"
           >
-            {freeBlocked
-              ? 'הניתוח החינמי נוצל — בחר מסלול'
+            {freeBlocked && !verifiedEmail
+              ? 'הניתוח החינמי נוצל — אמת אימייל או בחר מסלול'
               : apiReady?.demoMode
                 ? 'נתח את הסרטון (הדגמה) ←'
                 : 'קבל משוב AI לסרטון ←'}

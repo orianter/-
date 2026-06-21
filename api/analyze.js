@@ -859,7 +859,7 @@ async function runAnalysis(body, openaiKey) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Device-Fingerprint');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Device-Fingerprint, Authorization');
 
   if (req.method === 'OPTIONS') {
     res.status(204).end();
@@ -880,8 +880,12 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       const freeRemaining = usage.allowed ? 1 : 0;
+      const healthExtras = {
+        freeRemaining,
+        ...(freeRemaining === 0 && usage.requiresEmailAuth ? { requiresEmailAuth: true } : {}),
+      };
       if (openaiKey) {
-        sendJson(res, 200, { ...getHealthInfo(openaiKey), freeRemaining });
+        sendJson(res, 200, { ...getHealthInfo(openaiKey), ...healthExtras });
         return;
       }
       const { upstream, text } = await fetchSupabase('GET');
@@ -892,7 +896,7 @@ export default async function handler(req, res) {
         payload = {};
       }
       if (upstream.ok && payload && typeof payload === 'object') {
-        payload.freeRemaining = freeRemaining;
+        Object.assign(payload, healthExtras);
         sendJson(res, upstream.status, payload);
         return;
       }

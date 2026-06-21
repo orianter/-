@@ -1,4 +1,5 @@
 import { getDeviceFingerprint } from './lib/deviceFingerprint';
+import { getAccessToken } from './lib/supabaseClient';
 
 const DEFAULT_SUPABASE_URL = 'https://hgfyokwxcvuufzskvloi.supabase.co';
 const DEFAULT_SUPABASE_ANON_KEY =
@@ -20,13 +21,18 @@ export async function analyzeHeaders(extra = {}) {
     ...extra,
   };
 
+  const accessToken = await getAccessToken();
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+
   if (import.meta.env.PROD) {
     return headers;
   }
 
   return {
     apikey: supabaseAnonKey,
-    Authorization: `Bearer ${supabaseAnonKey}`,
+    Authorization: headers.Authorization || `Bearer ${supabaseAnonKey}`,
     ...headers,
   };
 }

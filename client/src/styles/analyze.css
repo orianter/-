@@ -552,6 +552,20 @@ input:focus, textarea:focus {
   margin-bottom: 1.25rem;
 }
 
+.url-import--primary {
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(37, 244, 238, 0.25);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(37, 244, 238, 0.06), rgba(254, 44, 85, 0.04));
+}
+
+.url-import__detected {
+  margin: 0.45rem 0 0;
+  font-size: 0.8rem;
+  color: var(--accent-2);
+  font-weight: 600;
+}
+
 .url-import__divider {
   display: flex;
   align-items: center;
@@ -607,4 +621,70 @@ input:focus, textarea:focus {
 
 .file-name__source {
   color: var(--accent-2);
+}
+
+.analyze-auth {
+  margin-bottom: 1.25rem;
+  padding: 1.1rem 1.2rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(37, 244, 238, 0.22);
+  background: rgba(37, 244, 238, 0.06);
+}
+
+.analyze-auth__title {
+  margin: 0 0 0.45rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.analyze-auth__desc {
+  margin: 0 0 0.85rem;
+  font-size: 0.86rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.analyze-auth__field {
+  display: block;
+  margin-bottom: 0.75rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.analyze-auth__field input {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: inherit;
+  font: inherit;
+  font-size: max(16px, 1rem);
+}
+
+.analyze-auth__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.analyze-auth__error {
+  margin: 0 0 0.65rem;
+  color: #ff7a96;
+  font-size: 0.84rem;
+}
+
+.analyze-auth__ok {
+  margin: 0;
+  color: #6ee7b7;
+  font-size: 0.9rem;
+}
+
+.analyze-error-fallback {
+  margin: 0.65rem 0 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--muted);
 }

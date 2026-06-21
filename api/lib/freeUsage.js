@@ -1,12 +1,14 @@
 import crypto from 'crypto';
+import { getVerifiedEmailFromRequest } from './supabaseAuth.js';
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || 'https://hgfyokwxcvuufzskvloi.supabase.co').replace(/\/$/, '');
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || '';
 const COOKIE_NAME = 'ra_free_used';
 const FINGERPRINT_HEADER = 'x-device-fingerprint';
 const FREE_LIMIT_MESSAGE = 'הניתוח החינמי כבר נוצל — בחר מסלול';
+const EMAIL_LIMIT_MESSAGE = 'כבר ניצלת את הניתוח החינמי עם כתובת האימייל הזו — בחר מסלול';
 
-export { FREE_LIMIT_MESSAGE };
+export { FREE_LIMIT_MESSAGE, EMAIL_LIMIT_MESSAGE };
 
 export function isFreeUsageDisabled() {
   return process.env.FREE_USAGE_DISABLED === '1' || process.env.FREE_USAGE_DISABLED === 'true';
@@ -45,6 +47,10 @@ export function extractFingerprint(req, body) {
 
 export function hashIp(ip) {
   return crypto.createHash('sha256').update(`${getSecret()}|ip|${ip}`).digest('hex');
+}
+
+export function hashEmail(email) {
+  return crypto.createHash('sha256').update(`${getSecret()}|email|${email.toLowerCase().trim()}`).digest('hex');
 }
 
 export function buildIdentityHash(fingerprint, ip) {
@@ -135,6 +141,42 @@ export async function hasStoredUsage(identityHash) {
   return Array.isArray(rows) && rows.length > 0;
 }
 
+export async function hasEmailUsage(emailHash) {
+  if (!SUPABASE_SERVICE_ROLE_KEY) return false;
+  const res = await supabaseFetch(
+    `free_analysis_email_usage?email_hash=eq.${encodeURIComponent(emailHash)}&select=email_hash&limit=1`,
+    { method: 'GET' },
+  );
+  if (res.status === 404) return false;
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Supabase email usage lookup failed: ${res.status} ${text.slice(0, 120)}`);
+  }
+  const rows = await res.json();
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+export async function storeEmailUsage(emailHash) {
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY missing');
+  }
+  const res = await supabaseFetch('free_analysis_email_usage', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Prefer: 'resolution=ignore-duplicates,return=minimal',
+    },
+    body: JSON.stringify([{
+      email_hash: emailHash,
+      used_at: new Date().toISOString(),
+    }]),
+  });
+  if (!res.ok && res.status !== 409) {
+    const text = await res.text();
+    throw new Error(`Supabase email usage insert failed: ${res.status} ${text.slice(0, 120)}`);
+  }
+}
+
 export async function storeUsage({ identityHash, fingerprint, ipHash }) {
   if (!SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error('SUPABASE_SERVICE_ROLE_KEY missing');
@@ -158,6 +200,40 @@ export async function storeUsage({ identityHash, fingerprint, ipHash }) {
   }
 }
 
+async function resolveEmailUsage(req) {
+  const email = await getVerifiedEmailFromRequest(req);
+  if (!email) return null;
+
+  const emailHash = hashEmail(email);
+  if (SUPABASE_SERVICE_ROLE_KEY) {
+    try {
+      const used = await hasEmailUsage(emailHash);
+      if (used) {
+        return {
+          allowed: false,
+          freeRemaining: 0,
+          code: 'EMAIL_LIMIT_EXCEEDED',
+          error: EMAIL_LIMIT_MESSAGE,
+          status: 402,
+          email,
+          emailHash,
+          enforcement: 'email',
+        };
+      }
+    } catch (err) {
+      console.error('[freeUsage] email lookup failed:', err instanceof Error ? err.message : err);
+    }
+  }
+
+  return {
+    allowed: true,
+    freeRemaining: 1,
+    email,
+    emailHash,
+    enforcement: 'email',
+  };
+}
+
 export async function resolveFreeUsage(req, body = {}, options = {}) {
   const { requireFingerprint = true } = options;
   if (isFreeUsageDisabled()) {
@@ -170,6 +246,9 @@ export async function resolveFreeUsage(req, body = {}, options = {}) {
       enforcement: 'disabled',
     };
   }
+
+  const emailUsage = await resolveEmailUsage(req);
+  if (emailUsage) return emailUsage;
 
   const fingerprint = extractFingerprint(req, body);
   if (!fingerprint) {
@@ -197,36 +276,27 @@ export async function resolveFreeUsage(req, body = {}, options = {}) {
   const { identityHash, ipHash } = buildIdentityHash(fingerprint, ip);
   const cookieHash = readUsageCookie(req);
 
+  const blocked = (source) => ({
+    allowed: false,
+    freeRemaining: 0,
+    code: 'FREE_LIMIT_EXCEEDED',
+    error: FREE_LIMIT_MESSAGE,
+    status: 402,
+    identityHash,
+    fingerprint,
+    ipHash,
+    enforcement: source,
+    requiresEmailAuth: true,
+  });
+
   if (cookieHash === identityHash) {
-    return {
-      allowed: false,
-      freeRemaining: 0,
-      code: 'FREE_LIMIT_EXCEEDED',
-      error: FREE_LIMIT_MESSAGE,
-      status: 402,
-      identityHash,
-      fingerprint,
-      ipHash,
-      enforcement: 'cookie',
-    };
+    return blocked('cookie');
   }
 
   if (SUPABASE_SERVICE_ROLE_KEY) {
     try {
       const used = await hasStoredUsage(identityHash);
-      if (used) {
-        return {
-          allowed: false,
-          freeRemaining: 0,
-          code: 'FREE_LIMIT_EXCEEDED',
-          error: FREE_LIMIT_MESSAGE,
-          status: 402,
-          identityHash,
-          fingerprint,
-          ipHash,
-          enforcement: 'supabase',
-        };
-      }
+      if (used) return blocked('supabase');
     } catch (err) {
       console.error('[freeUsage] lookup failed:', err instanceof Error ? err.message : err);
     }
@@ -245,7 +315,19 @@ export async function resolveFreeUsage(req, body = {}, options = {}) {
 }
 
 export async function markFreeUsageUsed(req, res, usage) {
-  if (isFreeUsageDisabled() || !usage?.identityHash) return;
+  if (isFreeUsageDisabled()) return;
+
+  if (usage?.emailHash) {
+    if (!SUPABASE_SERVICE_ROLE_KEY) return;
+    try {
+      await storeEmailUsage(usage.emailHash);
+    } catch (err) {
+      console.error('[freeUsage] email store failed:', err instanceof Error ? err.message : err);
+    }
+    return;
+  }
+
+  if (!usage?.identityHash) return;
 
   setUsageCookie(res, usage.identityHash);
 
@@ -267,5 +349,6 @@ export function freeLimitResponse(usage) {
     error: usage.error || FREE_LIMIT_MESSAGE,
     code: usage.code || 'FREE_LIMIT_EXCEEDED',
     freeRemaining: 0,
+    requiresEmailAuth: Boolean(usage.requiresEmailAuth),
   };
 }
