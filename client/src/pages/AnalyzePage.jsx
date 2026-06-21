@@ -18,10 +18,10 @@ const PLATFORMS = [
 
 const STEPS = [
   { label: 'קורא פרטי סרטון', icon: '📤' },
-  { label: 'דוגם פריימים', icon: '🎧' },
-  { label: 'שולח ל-Supabase', icon: '🎞️' },
-  { label: 'מחבר ל-OpenAI', icon: '💬' },
-  { label: 'מנתח AI', icon: '🧠' },
+  { label: 'דוגם פריימים', icon: '🎞️' },
+  { label: 'מכין תמונות Vision', icon: '👁️' },
+  { label: 'שולח ל-AI', icon: '💬' },
+  { label: 'מנתח מקצועי', icon: '🧠' },
   { label: 'מכין דוח', icon: '📋' },
 ];
 
