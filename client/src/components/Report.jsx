@@ -27,7 +27,12 @@ export function ScoreRing({ score, size = 'lg' }) {
   const color = scoreColor(score);
 
   return (
-    <div className={`score-ring score-ring--${size}`} style={{ '--pct': pct, '--color': color }}>
+    <div
+      className={`score-ring score-ring--${size}`}
+      style={{ '--pct': pct, '--color': color }}
+      role="img"
+      aria-label={`ציון AI משוער: ${score} מתוך 10`}
+    >
       <div className="score-ring__glow" aria-hidden />
       <div className="score-ring__inner">
         <span className="score-ring__value">{score}</span>

@@ -6,10 +6,10 @@ export function Navbar() {
   const onAnalyze = pathname === '/analyze';
 
   return (
-    <nav className="navbar">
+    <nav className="navbar" aria-label="ניווט ראשי">
       <div className="navbar__inner">
-        <Link to="/" className="navbar__brand">
-          <span className="navbar__logo">▶</span>
+        <Link to="/" className="navbar__brand" aria-label="Reel Analyzer — דף הבית">
+          <span className="navbar__logo" aria-hidden="true">▶</span>
           <span>Reel Analyzer</span>
         </Link>
 
@@ -35,9 +35,9 @@ export function Footer() {
     <footer className="site-footer">
       <div className="site-footer__inner">
         <div className="site-footer__brand">
-          <span className="navbar__logo">▶</span>
+          <span className="navbar__logo" aria-hidden="true">▶</span>
           <strong>Reel Analyzer</strong>
-          <p>ניתוח AI לסרטוני TikTok ו-Reels</p>
+          <p>משוב AI לסרטוני TikTok ו-Reels — לא הבטחת תוצאות</p>
         </div>
         <div className="site-footer__cols">
           <div>
@@ -49,11 +49,12 @@ export function Footer() {
           <div>
             <h4>מידע</h4>
             <a href="/#faq">שאלות נפוצות</a>
+            <a href="/#ai-disclaimer">הבהרה על AI</a>
           </div>
         </div>
       </div>
       <div className="site-footer__bottom">
-        <p>© {new Date().getFullYear()} Reel Analyzer · הסרטון נמחק אחרי כל ניתוח</p>
+        <p>© {new Date().getFullYear()} Reel Analyzer · הסרטון לא נשמר · הדוח הוא המלצת AI (OpenAI)</p>
       </div>
     </footer>
   );
@@ -62,8 +63,13 @@ export function Footer() {
 export function Layout({ children }) {
   return (
     <div className="layout">
+      <a href="#main-content" className="skip-link">
+        דלג לתוכן הראשי
+      </a>
       <Navbar />
-      <main>{children}</main>
+      <main id="main-content" tabIndex={-1}>
+        {children}
+      </main>
       <Footer />
     </div>
   );

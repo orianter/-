@@ -8,6 +8,7 @@ import {
   ScoreRing,
   Timeline,
 } from './Report';
+import { AiDisclaimer } from './AiDisclaimer';
 import { MOCK_RESULT } from '../data/content';
 
 export function DemoReportPreview() {
@@ -15,7 +16,8 @@ export function DemoReportPreview() {
 
   return (
     <div className="demo-report">
-      <div className="demo-report__badge">דוגמה — לא הסרטון שלך</div>
+      <div className="demo-report__badge">דוגמה — לא הסרטון שלך · משוב AI</div>
+      <AiDisclaimer variant="short" />
       <div className="demo-report__top">
         <ScoreRing score={analysis.score} />
         <div>

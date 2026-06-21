@@ -3,6 +3,7 @@ import { DemoReportPreview } from '../components/DemoReport';
 import { FAQ } from '../components/FAQ';
 import { Pricing } from '../components/Pricing';
 import { Reveal } from '../components/Reveal';
+import { AiDisclaimer } from '../components/AiDisclaimer';
 import { COMPARISON, TESTIMONIALS, TRUST_STATS } from '../data/content';
 
 const STEPS = [
@@ -35,8 +36,8 @@ export default function HomePage() {
             {' '}— ומה לשנות
           </h1>
           <p className="hero__sub">
-            העלה סרטון וקבל דוח מקצועי: 6 ציונים, ממצאים עם ראיה מדויקת,
-            תוכנית שיפור, hook חלופי ותסריט — מבוסס פריימים, אודיו ו-Vision AI.
+            העלה סרטון וקבל <strong>משוב AI</strong> (OpenAI): 6 ציונים, ממצאים עם ראיה,
+            תוכנית שיפור ותסריט — מבוסס פריימים, אודיו ו-Vision. לא הבטחת ויראליות.
           </p>
           <div className="hero__actions">
             <Link to="/analyze" className="btn-hero">
@@ -46,8 +47,8 @@ export default function HomePage() {
             <a href="#demo" className="btn-hero-ghost">ראה דוגמת דוח</a>
           </div>
           <div className="hero__social">
-            <span className="hero__stars">★★★★★</span>
-            <span>מאות יוצרים כבר שיפרו את התוכן שלהם</span>
+            <span className="hero__stars" aria-hidden="true">★★★★★</span>
+            <span>משוב AI ליוצרי תוכן · דוגמאות למטה</span>
           </div>
         </div>
       </section>
@@ -104,8 +105,8 @@ export default function HomePage() {
         <div className="section-wrap">
           <div className="section-head">
             <span className="section-tag">למה זה שווה</span>
-            <h2>מניחוש — לוודאות</h2>
-            <p>ההבדל בין להעלות בתקווה לבין לדעת מה עובד</p>
+            <h2>מניחוש — לכיוון ממוקד</h2>
+            <p>ההבדל בין להעלות בתקווה לבין לקבל משוב AI מסודר לפני/אחרי העלאה</p>
           </div>
           <div className="compare__cols">
             <Reveal className="compare-card compare-card--bad">
@@ -133,7 +134,7 @@ export default function HomePage() {
           <div className="section-head">
             <span className="section-tag">דוגמה אמיתית</span>
             <h2>ככה נראה הדוח</h2>
-            <p>כך ייראה הניתוח שלך אחרי העלאת סרטון</p>
+            <p>כך ייראה דוח לדוגמה — הניתוח שלך יתבסס על הסרטון והפרטים שתמלא</p>
           </div>
           <Reveal>
             <DemoReportPreview />
@@ -146,7 +147,7 @@ export default function HomePage() {
           <div className="section-head">
             <span className="section-tag">מה אומרים</span>
             <h2>יוצרים שכבר שיפרו</h2>
-            <p>תוצאות אמיתיות ממשתמשים אמיתיים</p>
+            <p>דוגמאות לסגנון משוב — לא תוצאות מובטחות</p>
           </div>
           <div className="testimonials__grid">
             {TESTIMONIALS.map((t, i) => (
@@ -167,6 +168,11 @@ export default function HomePage() {
       </section>
 
       <Pricing />
+      <section id="ai-disclaimer" className="ai-disclaimer-section">
+        <div className="section-wrap section-wrap--narrow">
+          <AiDisclaimer />
+        </div>
+      </section>
       <FAQ />
 
       <section className="final-cta">
@@ -174,7 +180,7 @@ export default function HomePage() {
           <div className="final-cta__glow" />
           <span className="section-tag">מתחילים?</span>
           <h2>מוכן לשפר את הרילס הבא?</h2>
-          <p>העלה סרטון וקבל משוב AI שמבוסס על דגימות אמיתיות — הניתוח הראשון חינם</p>
+          <p>העלה סרטון וקבל משוב AI — הניתוח הראשון חינם · לא הבטחת תוצאות</p>
           <Link to="/analyze" className="btn-hero">
             נתח את הסרטון שלי
             <span>←</span>

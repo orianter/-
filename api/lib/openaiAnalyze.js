@@ -289,6 +289,11 @@ ${formatAudioMetrics(input.audioMetrics)}
 - hookSuggestion: פתיחה חלופית מותאמת ל-"${audience !== 'לא צוין' ? audience : 'קהל היעד'}"
 - scriptSuggestion: outline מלא ל-${Number.isFinite(durationSec) ? durationSec.toFixed(0) : '60'} שניות עם שניות
 
+## שקיפות (חובה)
+- זה משוב AI — לא הבטחה לויראליות, צפיות או מכירות
+- אם חסר מידע — כתוב במפורש מה לא ניתן לבדוק
+- אל תטען שראית/שמעת משהו שלא בנתונים
+
 החזר JSON בלבד, בלי markdown:
 {
   "score": <1-10>,

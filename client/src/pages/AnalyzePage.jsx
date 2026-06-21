@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { analyzeFunctionUrl, hasSupabaseConfig, supabaseHeaders } from '../api';
+import { AiDisclaimer } from '../components/AiDisclaimer';
 import {
   AnalysisSection,
   buildReportText,
@@ -563,8 +564,8 @@ export default function AnalyzePage() {
         <h1>{result ? 'הדוח שלך מוכן' : 'נתח את הסרטון שלך'}</h1>
         <p>
           {result
-            ? 'ניתוח מבוסס נתונים אמיתיים — פריימים, אודיו, Vision ו-AI'
-            : 'העלה רילס וקבל דוח מקצועי עם ציונים, תיקונים והסברים מדויקים'}
+            ? 'משוב AI מבוסס דגימות מהסרטון — לא הבטחת תוצאות'
+            : 'העלה רילס, מלא פרטים, וקבל משוב AI עם ציונים והמלצות מדויקות'}
         </p>
       </div>
 
@@ -593,7 +594,7 @@ export default function AnalyzePage() {
       )}
 
       {loading && (
-        <div className="loading-panel">
+        <div className="loading-panel" role="status" aria-live="polite" aria-busy="true">
           <div className="loading-panel__spinner" />
           <h2>מנתח את הסרטון...</h2>
           <p>בדרך כלל 30–60 שניות. אל תסגור את הדף.</p>
@@ -701,13 +702,15 @@ export default function AnalyzePage() {
 
             <fieldset className="platform-picker">
               <legend>לאיזו פלטפורמה?</legend>
-              <div className="platform-picker__options">
+              <div className="platform-picker__options" role="radiogroup" aria-label="בחירת פלטפורמה">
                 {PLATFORMS.map((p) => (
                   <button
                     key={p.id}
                     type="button"
-                    className={`platform-btn ${platform === p.id ? 'platform-btn--active' : ''}`}
+                    role="radio"
+                    aria-checked={platform === p.id}
                     onClick={() => setPlatform(p.id)}
+                    className={`platform-btn ${platform === p.id ? 'platform-btn--active' : ''}`}
                   >
                     <span className="platform-btn__icon">{p.icon}</span>
                     <span className="platform-btn__label">{p.label}</span>
@@ -760,35 +763,45 @@ export default function AnalyzePage() {
             </label>
           </div>
 
-          {error && <div className="analyze-alert analyze-alert--error">{error}</div>}
+          {error && (
+            <div className="analyze-alert analyze-alert--error" role="alert" aria-live="assertive">
+              {error}
+            </div>
+          )}
+
+          <AiDisclaimer variant="short" className="analyze-ai-note" />
 
           <button
             className="btn-analyze"
             disabled={!file || !apiReady || apiReady.unreachable || apiReady.missingConfig}
             onClick={analyze}
+            aria-describedby="analyze-help"
           >
-            {apiReady?.demoMode ? 'נתח את הסרטון (הדגמה) ←' : 'נתח את הסרטון ←'}
+            {apiReady?.demoMode ? 'נתח את הסרטון (הדגמה) ←' : 'קבל משוב AI לסרטון ←'}
           </button>
 
-          <p className="analyze-disclaimer">
-            הסרטון המלא לא נשלח · נשלחים מדדי פריימים, ניתוח אודיו, ועד 5 תמונות מפתח ל-Vision
+          <p id="analyze-help" className="analyze-disclaimer">
+            {!file && 'העלה סרטון כדי להפעיל את הניתוח. '}
+            הסרטון המלא לא נשמר · נשלחים מדדי פריימים, אודיו, ועד 5 תמונות ל-Vision · הדוח הוא המלצת AI (OpenAI)
           </p>
         </div>
       )}
 
       {result && analysis && (
-        <div id="report" className="report">
+        <div id="report" className="report" aria-labelledby="report-heading">
+          <h2 id="report-heading" className="visually-hidden">דוח ניתוח AI</h2>
           <div className="report__top">
             {result.demo && (
               <div className="report__demo-badge">
                 דוח הדגמה · מבוסס על נתוני הסרטון האמיתיים שלך
               </div>
             )}
+            <AiDisclaimer variant="short" />
             <ReportDataSources sources={result.dataSources} />
             <div className="report__verdict-wrap">
               <ScoreRing score={analysis.score} />
               <div className="report__score-block">
-                <p className="report__verdict-label">ציון כללי</p>
+                <p className="report__verdict-label">ציון AI משוער</p>
                 <span
                   className="report__score-badge"
                   style={{ color: scoreColor(analysis.score), borderColor: `${scoreColor(analysis.score)}44` }}

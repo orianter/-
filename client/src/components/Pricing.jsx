@@ -58,7 +58,7 @@ export function Pricing() {
           <span className="pricing__guarantee-icon">🛡️</span>
           <div>
             <strong>ניתוח ראשון חינם + 14 יום החזר כספי מלא</strong>
-            <p>נסה בלי כרטיס אשראי. לא אהבת את הדוח? קיבלת את הכסף בחזרה, בלי שאלות.</p>
+            <p>נסה בלי כרטיס אשראי. הדוח הוא המלצת AI — לא הבטחת תוצאות. לא אהבת? החזר מלא.</p>
           </div>
         </div>
       </div>
