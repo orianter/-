@@ -26,20 +26,34 @@ const STEPS = [
 ];
 
 const MAX_FILE_MB = 100;
-const FRAME_SAMPLE_SIZE = 120;
+const FRAME_SAMPLE_SIZE = 160;
+const VISION_FRAME_SIZE = 512;
 
 function frameTimestamps(durationSec) {
   const duration = Math.min(Math.max(Number(durationSec) || 0, 0), 60);
-  const points = new Set([0.2, 0.8, 1.5, 3]);
-  if (duration > 6) points.add(Math.round(duration * 0.25));
-  if (duration > 10) points.add(Math.round(duration * 0.5));
-  if (duration > 14) points.add(Math.round(duration * 0.75));
-  if (duration > 4) points.add(Math.max(0.2, duration - 1));
+  const points = new Set([0.15, 0.5, 1, 1.5, 2, 3, 4, 5]);
+
+  for (let t = 6; t < duration - 1; t += 3) {
+    points.add(t);
+  }
+  if (duration > 6) points.add(Math.round(duration * 0.25 * 10) / 10);
+  if (duration > 10) points.add(Math.round(duration * 0.5 * 10) / 10);
+  if (duration > 14) points.add(Math.round(duration * 0.75 * 10) / 10);
+  if (duration > 4) points.add(Math.max(0.2, duration - 1.5));
+  if (duration > 8) points.add(Math.max(0.5, duration - 0.5));
 
   return [...points]
     .filter((point) => point > 0 && point < duration)
     .sort((a, b) => a - b)
-    .slice(0, 8);
+    .slice(0, 14);
+}
+
+function visionFrameTimestamps(durationSec) {
+  const duration = Math.min(Math.max(Number(durationSec) || 0, 0), 60);
+  const points = [0.5, 3];
+  if (duration > 12) points.push(Math.round(duration * 0.5 * 10) / 10);
+  if (duration > 20) points.push(Math.max(1, duration - 2));
+  return [...new Set(points.filter((p) => p > 0 && p < duration))].slice(0, 4);
 }
 
 function computeFrameMetrics(imageData, previousData) {
@@ -95,16 +109,35 @@ function computeFrameMetrics(imageData, previousData) {
   };
 }
 
+function drawScaledFrame(video, canvas, ctx, targetSize) {
+  const sourceWidth = video.videoWidth || targetSize;
+  const sourceHeight = video.videoHeight || targetSize;
+  const scale = targetSize / Math.max(sourceWidth, sourceHeight);
+  canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+  canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+}
+
+function canvasToJpegBase64(canvas, quality = 0.62) {
+  const dataUrl = canvas.toDataURL('image/jpeg', quality);
+  return dataUrl.includes(',') ? dataUrl.split(',')[1] : '';
+}
+
 async function sampleVideoFrames(file, durationSec) {
   const timestamps = frameTimestamps(durationSec);
-  if (!timestamps.length) return [];
+  const visionTimes = visionFrameTimestamps(durationSec);
+  if (!timestamps.length) return { frameMetrics: [], frameImages: [] };
 
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const video = document.createElement('video');
     const canvas = document.createElement('canvas');
+    const visionCanvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const visionCtx = visionCanvas.getContext('2d');
     const samples = [];
+    const frameImages = [];
+    const visionSet = new Set(visionTimes.map((t) => Math.round(t * 10) / 10));
     let previousData = null;
     let index = 0;
     let finished = false;
@@ -115,7 +148,7 @@ async function sampleVideoFrames(file, durationSec) {
       finished = true;
       if (timer) clearTimeout(timer);
       URL.revokeObjectURL(url);
-      resolve(samples);
+      resolve({ frameMetrics: samples, frameImages });
     };
     if (!ctx) {
       finish();
@@ -123,18 +156,24 @@ async function sampleVideoFrames(file, durationSec) {
     }
 
     const captureCurrentFrame = () => {
-      const sourceWidth = video.videoWidth || FRAME_SAMPLE_SIZE;
-      const sourceHeight = video.videoHeight || FRAME_SAMPLE_SIZE;
-      const scale = FRAME_SAMPLE_SIZE / Math.max(sourceWidth, sourceHeight);
-      canvas.width = Math.max(1, Math.round(sourceWidth * scale));
-      canvas.height = Math.max(1, Math.round(sourceHeight * scale));
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const second = Math.round(timestamps[index] * 10) / 10;
+      drawScaledFrame(video, canvas, ctx, FRAME_SAMPLE_SIZE);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       samples.push({
-        second: Math.round(timestamps[index] * 10) / 10,
+        second,
         ...computeFrameMetrics(imageData, previousData),
       });
       previousData = imageData;
+
+      if (visionCtx && visionSet.has(second)) {
+        drawScaledFrame(video, visionCanvas, visionCtx, VISION_FRAME_SIZE);
+        const base64 = canvasToJpegBase64(visionCanvas);
+        if (base64) {
+          const label = second <= 3 ? 'פתיחה (Hook)' : second >= (durationSec || 60) * 0.7 ? 'סיום/CTA' : 'אמצע';
+          frameImages.push({ second, label, base64 });
+        }
+      }
+
       index += 1;
       seekNextFrame();
     };
@@ -147,9 +186,10 @@ async function sampleVideoFrames(file, durationSec) {
       video.currentTime = timestamps[index];
     };
 
-    timer = setTimeout(finish, 10000);
+    timer = setTimeout(finish, 15000);
     video.muted = true;
-    video.preload = 'metadata';
+    video.playsInline = true;
+    video.preload = 'auto';
     video.onloadedmetadata = seekNextFrame;
     video.onseeked = captureCurrentFrame;
     video.onerror = finish;
@@ -278,7 +318,7 @@ export default function AnalyzePage() {
       if (videoMeta.durationSec && videoMeta.durationSec > 65) {
         throw new Error('הסרטון ארוך מדי. המקסימום הוא דקה אחת.');
       }
-      const frameMetrics = await sampleVideoFrames(file, videoMeta.durationSec);
+      const { frameMetrics, frameImages } = await sampleVideoFrames(file, videoMeta.durationSec);
       const res = await fetch(analyzeFunctionUrl(), {
         method: 'POST',
         headers: supabaseHeaders({ 'Content-Type': 'application/json' }),
@@ -293,6 +333,7 @@ export default function AnalyzePage() {
           fileSizeMb: Math.round((file.size / 1024 / 1024) * 10) / 10,
           ...videoMeta,
           frameMetrics,
+          frameImages,
         }),
       });
       const data = await res.json();
@@ -352,7 +393,7 @@ export default function AnalyzePage() {
     <div className="analyze-page">
       <div className="analyze-page__head">
         <h1>נתח את הסרטון שלך</h1>
-        <p>בחר רילס או טיקטוק וקבל דוח AI שמבוסס על דגימות אמיתיות מהסרטון</p>
+        <p>בחר רילס או טיקטוק וקבל דוח AI מקצועי — דגימת פריימים אמיתית + ניתוח Vision</p>
       </div>
 
       {apiReady && apiReady.missingConfig && (
@@ -518,7 +559,7 @@ export default function AnalyzePage() {
           </button>
 
           <p className="analyze-disclaimer">
-            הסרטון המלא לא נשלח לשרת · נשלחים רק פרטי הטופס ומדדי פריימים שנדגמו בדפדפן
+            הסרטון המלא לא נשלח לשרת · נשלחים מדדי פריימים + עד 4 תמונות מפתח לניתוח Vision
           </p>
         </div>
       )}

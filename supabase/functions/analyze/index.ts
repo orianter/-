@@ -33,7 +33,8 @@ function json(body: unknown, status = 200) {
 function clampScore(value: unknown, fallback = 5) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
-  return Math.min(10, Math.max(1, Math.round(n)));
+  const normalized = n > 10 ? n / 10 : n;
+  return Math.min(10, Math.max(1, Math.round(normalized)));
 }
 
 function asText(value: unknown, fallback = '') {
@@ -117,44 +118,129 @@ function normalizeAnalysis(raw: unknown) {
   };
 }
 
-function buildPrompt(input: Record<string, unknown>) {
+function formatFrameMetrics(frames: unknown) {
+  if (!Array.isArray(frames) || !frames.length) {
+    return 'לא התקבלו דגימות פריימים — הניתוח הוויזואלי מוגבל.';
+  }
+
+  const lines = frames.map((raw) => {
+    const f = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+    const second = Number(f.second);
+    const brightness = Number(f.brightness);
+    const contrast = Number(f.contrast);
+    const sharpness = Number(f.sharpness);
+    const colorfulness = Number(f.colorfulness);
+    const sceneChange = Number(f.sceneChange);
+    const darkRatio = Number(f.darkRatio);
+    const brightRatio = Number(f.brightRatio);
+
+    const flags: string[] = [];
+    if (Number.isFinite(second) && second <= 3) flags.push('אזור Hook');
+    if (brightness < 70) flags.push('חשוך');
+    if (brightness > 195) flags.push('בהיר מדי');
+    if (sharpness < 10) flags.push('מטושטש');
+    if (sceneChange < 6) flags.push('סטטי');
+    if (sceneChange > 40) flags.push('קפיצה חדה');
+    if (darkRatio > 35) flags.push('הרבה אזורים כהים');
+    if (brightRatio > 20) flags.push('הרבה אזורים שרופים');
+
+    return `- ${Number.isFinite(second) ? second.toFixed(1) : '?'} שנ': בהירות ${Math.round(brightness)}, קונטרסט ${Math.round(contrast)}, חדות ${Math.round(sharpness)}, צבע ${Math.round(colorfulness)}, שינוי סצנה ${Math.round(sceneChange)}%${flags.length ? ` [${flags.join(', ')}]` : ''}`;
+  });
+
+  const hookFrames = frames.filter((f) => Number((f as Record<string, unknown>)?.second) <= 3);
+  const avgHookChange = hookFrames.length > 1
+    ? hookFrames.slice(1).reduce((sum, f) => sum + Number((f as Record<string, unknown>).sceneChange || 0), 0) / (hookFrames.length - 1)
+    : null;
+
+  let summary = `\nסיכום מדדים: ${frames.length} פריימים נדגמו מהסרטון האמיתי.`;
+  if (avgHookChange !== null && avgHookChange < 7) {
+    summary += ' ב-3 השניות הראשונות יש מעט שינוי ויזואלי — סיכון גבוה לגלילה.';
+  }
+
+  return lines.join('\n') + summary;
+}
+
+function normalizeFrameImages(images: unknown) {
+  if (!Array.isArray(images)) return [];
+  return images
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => {
+      const img = item as Record<string, unknown>;
+      const base64 = asText(img.base64);
+      if (!base64 || base64.length > 120_000) return null;
+      return {
+        second: Number(img.second) || 0,
+        label: asText(img.label, 'פריים'),
+        base64,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 4) as Array<{ second: number; label: string; base64: string }>;
+}
+
+function buildPrompt(input: Record<string, unknown>, hasVision: boolean) {
   const platform = normalizePlatform(input.platform);
   const platformLabel = PLATFORM_LABELS[platform] || PLATFORM_LABELS.tiktok;
   const goal = asText(input.goal, 'לא צוין').slice(0, 300);
   const problem = asText(input.problem, 'לא צוין').slice(0, 500);
+  const audience = asText(input.audience, 'לא צוין').slice(0, 200);
+  const contentBrief = asText(input.contentBrief, 'לא צוין').slice(0, 1200);
   const fileName = asText(input.fileName, 'לא צוין');
   const fileType = asText(input.fileType, 'לא צוין');
   const fileSizeMb = Number(input.fileSizeMb);
   const durationSec = Number(input.durationSec);
   const width = Number(input.width);
   const height = Number(input.height);
+  const isVertical = Number.isFinite(width) && Number.isFinite(height) ? height > width : null;
+  const frameBlock = formatFrameMetrics(input.frameMetrics);
 
-  return `אתה מומחה בכיר לתוכן ויראלי קצר ב-${platformLabel}.
-נתח את הסרטון לפי הפרטים שהמשתמש הזין. אין לך גישה לפריימים או לתמלול, לכן אל תמציא פרטים ויזואליים ספציפיים שלא נמסרו.
-תן משוב בעברית, ביקורתי אך בונה, ספציפי ופרקטי.
+  return `אתה אנליסט בכיר לתוכן ויראלי קצר (${platformLabel}) עם ניסיון של אלפי רילסים.
+תפקידך: ניתוח מקצועי, ספציפי ופרקטי — לא משפטים גנריים.
 
-## פרטים זמינים
+## מה יש לך
+${hasVision
+    ? '- יש לך גם תמונות פריים אמיתיות מהסרטון (מצורפות). השתמש בהן לניתוח ויזואלי, Hook, קומפozיציה, טקסט על המסך, תאורה, ופנים/מוצר.'
+    : '- אין תמונות, אבל יש מדדי פריימים אמיתיים שנדגמו מהסרטון בדפדפן.'}
+- אין לך תמלול אודיו — אל תמציא מה נאמר. אם יש contentBrief, השתמש בו לניתוח מסר.
+
+## הקשר מהיוצר
 - פלטפורמה: ${platformLabel}
-- מטרת היוצר: ${goal}
-- מה לא עבד לדעת היוצר: ${problem}
-- שם קובץ: ${fileName}
-- סוג קובץ: ${fileType}
-- גודל קובץ: ${Number.isFinite(fileSizeMb) ? fileSizeMb.toFixed(1) + 'MB' : 'לא זוהה'}
-- אורך משוער: ${Number.isFinite(durationSec) ? durationSec.toFixed(1) + ' שניות' : 'לא זוהה'}
-- מידות: ${Number.isFinite(width) && Number.isFinite(height) ? `${width}×${height}` : 'לא זוהה'}
+- קהל יעד: ${audience}
+- מטרה: ${goal}
+- מה לא עבד (לדעת היוצר): ${problem}
+- תיאור התוכן/מה נאמר: ${contentBrief}
 
-## הנחיות
-- אם חסר מידע, ציין מה כדאי לבדוק בסרטון במקום להמציא.
-- התמקד ב-Hook, מסר, CTA, קצב, התאמה לפלטפורמה, והצעות שיפור.
-- החזר JSON בלבד, בלי markdown.
+## מטא-דאטה טכני
+- שם: ${fileName} · סוג: ${fileType}
+- גודל: ${Number.isFinite(fileSizeMb) ? fileSizeMb.toFixed(1) + 'MB' : 'לא זוהה'}
+- אורך: ${Number.isFinite(durationSec) ? durationSec.toFixed(1) + ' שניות' : 'לא זוהה'}
+- מידות: ${Number.isFinite(width) && Number.isFinite(height) ? `${width}×${height}` : 'לא זוהה'}${isVertical === true ? ' (אנכי ✓)' : isVertical === false ? ' (לא אנכי — בעיה לרילס/טיקטוק)' : ''}
 
-מבנה JSON מדויק:
+## מדדי פריימים אמיתיים (נדגמו מהסרטון)
+${frameBlock}
+
+## כללי ניתוח
+1. Hook (0-3 שנ'): האם יש מתח, הבטחה, שאלה, או ניגוד? האם יש שינוי ויזואלי מספיק לפי המדדים?
+2. קצב: לפי שינויי סצנה בין פריימים — האם הסרטון סטטי מדי?
+3. מסר: לפי contentBrief — האם יש הבטחה ברורה, ערך, ו-CTA אחד?
+4. ויזואל: בהירות, חדות, קונטרסט, פורמט אנכי
+5. אודיו: אם אין מידע — ציין מה לבדוק (מוזיקה, כתוביות, עוצמת דיבור) בלי להמציא
+6. התאמה לפלטפורמה: ${platformLabel} — hook מהיר, טקסט בטוח, אורך אידיאלי
+
+## פלט נדרש
+- כל המלצה חייבת להיות ספציפית לנתונים שקיבלת
+- priorityFixes: 3-5 תיקונים מדורגים לפי השפעה
+- hookSuggestion: פתיחה חלופית מותאמת לקהל "${audience !== 'לא צוין' ? audience : 'קהל היעד'}"
+- scriptSuggestion: outline מלא לפי ${Number.isFinite(durationSec) ? durationSec.toFixed(0) : '60'} שניות
+- timeline: נקודות זמן ספציפיות לפי הפריימים שנדגמו
+
+החזר JSON בלבד, בלי markdown:
 {
   "score": <1-10>,
-  "verdict": "<משפט אחד>",
-  "summary": "<2-3 משפטים>",
+  "verdict": "<משפט אחד חד>",
+  "summary": "<2-4 משפטים שמסכמים את הממצאים העיקריים>",
   "categories": {
-    "hook": { "score": <1-10>, "label": "פתיחה (Hook)", "note": "<משפט>" },
+    "hook": { "score": <1-10>, "label": "פתיחה (Hook)", "note": "<משפט ספציפי>" },
     "pacing": { "score": <1-10>, "label": "קצב ועריכה", "note": "<משפט>" },
     "message": { "score": <1-10>, "label": "מסר ו-CTA", "note": "<משפט>" },
     "visual": { "score": <1-10>, "label": "ויזואל", "note": "<משפט>" },
@@ -162,14 +248,52 @@ function buildPrompt(input: Record<string, unknown>) {
     "platformFit": { "score": <1-10>, "label": "התאמה לפלטפורמה", "note": "<משפט>" }
   },
   "priorityFixes": ["<#1>", "<#2>", "<#3>"],
-  "whyItFailed": ["<סיבה אפשרית>"],
-  "whatToChange": ["<שינוי קונקרטי>"],
+  "whyItFailed": ["<סיבה>"],
+  "whatToChange": ["<שינוי>"],
   "howToImprove": ["<המלצה>"],
   "hookSuggestion": "<פתיחה חלופית>",
-  "scriptSuggestion": "<תסריט/outline משופר>",
+  "scriptSuggestion": "<תסריט/outline>",
   "platformTips": ["<טיפ>"],
-  "timeline": [{ "second": <number>, "note": "<מה לבדוק/לשנות ברגע הזה>" }]
+  "timeline": [{ "second": <number>, "note": "<מה לשנות>" }]
 }`;
+}
+
+function buildMessages(input: Record<string, unknown>) {
+  const frameImages = normalizeFrameImages(input.frameImages);
+  const hasVision = frameImages.length > 0;
+  const prompt = buildPrompt(input, hasVision);
+
+  if (!hasVision) {
+    return [
+      {
+        role: 'system',
+        content: 'אתה אנליסט תוכן ויראלי מקצועי ברמה הגבוהה ביותר. עונה תמיד בעברית. החזר JSON תקין בלבד.',
+      },
+      { role: 'user', content: prompt },
+    ];
+  }
+
+  const content: Array<Record<string, unknown>> = [
+    { type: 'text', text: prompt },
+    ...frameImages.flatMap((img) => [
+      {
+        type: 'text',
+        text: `[פריים ב-${img.second.toFixed(1)} שניות — ${img.label}]`,
+      },
+      {
+        type: 'image_url',
+        image_url: { url: `data:image/jpeg;base64,${img.base64}`, detail: 'low' },
+      },
+    ]),
+  ];
+
+  return [
+    {
+      role: 'system',
+      content: 'אתה אנליסט תוכן ויראלי מקצועי עם יכולת ראייה. נתח את הפריימים האמיתיים מהסרטון. עונה בעברית. JSON בלבד.',
+    },
+    { role: 'user', content },
+  ];
 }
 
 serve(async (req) => {
@@ -187,6 +311,8 @@ serve(async (req) => {
       maxDurationSec: 60,
       maxFileMb: 100,
       service: 'supabase-edge-analyze',
+      model: 'gpt-4o',
+      vision: true,
     });
   }
 
@@ -206,6 +332,9 @@ serve(async (req) => {
       return json({ error: 'הסרטון ארוך מדי. המקסימום הוא דקה אחת.' }, 400);
     }
 
+    const frameImages = normalizeFrameImages(input.frameImages);
+    const model = frameImages.length > 0 ? 'gpt-4o' : 'gpt-4o-mini';
+
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -213,17 +342,11 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model,
         response_format: { type: 'json_object' },
-        messages: [
-          {
-            role: 'system',
-            content: 'אתה אנליסט תוכן ויראלי מקצועי. עונה תמיד בעברית. החזר JSON תקין בלבד.',
-          },
-          { role: 'user', content: buildPrompt(input) },
-        ],
-        max_tokens: 2500,
-        temperature: 0.4,
+        messages: buildMessages(input),
+        max_tokens: 4000,
+        temperature: 0.35,
       }),
     });
 
@@ -249,7 +372,9 @@ serve(async (req) => {
         isVertical: Number(input.height) > Number(input.width),
       },
       transcript: '',
-      frameTimestamps: [],
+      frameTimestamps: Array.isArray(input.frameMetrics)
+        ? input.frameMetrics.map((f: Record<string, unknown>) => Number(f.second)).filter(Number.isFinite)
+        : [],
       analysis: normalizeAnalysis(parseModelJson(content)),
     });
   } catch (err) {

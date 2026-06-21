@@ -151,6 +151,65 @@ function visualEvidence(input) {
   };
 }
 
+function blendScore(measured, ai, measuredWeight = 0.65) {
+  const m = clampScore(measured);
+  const a = clampScore(ai, m);
+  return Math.round(m * measuredWeight + a * (1 - measuredWeight));
+}
+
+function mergeNote(measuredNote, aiNote, fallback) {
+  const parts = [asText(measuredNote), asText(aiNote)].filter(Boolean);
+  if (!parts.length) return fallback;
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[1]}`;
+}
+
+function contentScores(content) {
+  let message = 5;
+  let audio = 6;
+  const notes = [];
+  const { goal, problem, audience, contentBrief } = content;
+
+  if (audience) {
+    message += 1;
+    notes.push(`קהל יעד מוגדר: ${audience}.`);
+  }
+  if (goal) {
+    message += 1;
+    notes.push(`מטרה: ${goal}.`);
+  }
+  if (problem) notes.push(`בעיה שדווחה: ${problem}.`);
+
+  if (contentBrief) {
+    message += 1;
+    const brief = contentBrief.toLowerCase();
+    const hasHook = /[?]/.test(contentBrief) || /(איך|למה|כמה|מה|טעות|סוד|לפני|אחרי|אל|בלי|אם)/.test(brief);
+    const hasCta = /(שלח|לחץ|כתוב|שמור|עקוב|קנה|דברו|השאירו|תגובה|לינק|ביו|וואטסאפ|dm|direct)/i.test(brief);
+    const hasValue = contentBrief.length >= 40;
+
+    if (hasHook) message += 1;
+    else notes.push('בתיאור התוכן לא זוהה Hook ברור (שאלה/מתח/הבטחה).');
+    if (hasCta) message += 1;
+    else notes.push('לא זוהה CTA ברור בתיאור התוכן.');
+    if (hasValue) message += 1;
+    else notes.push('תיאור התוכן קצר מדי — קשה לבדוק מסר מלא.');
+
+    if (/(מוזיק|שיר|beat|סאונד|קול|דיבור|כתובית)/i.test(brief)) {
+      audio += 1;
+      notes.push('יש אזכור לאודיו/מוזיקה/דיבור בתיאור.');
+    } else {
+      notes.push('לא ניתן לבדוק אודיו — ודא שיש מוזיקה/דיבור ברור וכתוביות.');
+    }
+  } else {
+    notes.push('לא סופק תיאור תוכן — ניתוח המסר מוגבל.');
+  }
+
+  return {
+    message: Math.min(10, message),
+    audio: Math.min(10, audio),
+    notes,
+  };
+}
 function contentEvidence(input) {
   const goal = asText(input?.goal);
   const problem = asText(input?.problem);
@@ -159,6 +218,9 @@ function contentEvidence(input) {
   const hasContext = Boolean(goal || problem || audience || contentBrief);
   const notes = [];
   const fixes = [];
+  const scores = contentScores({ goal, problem, audience, contentBrief });
+
+  notes.push(...scores.notes);
 
   if (!audience) {
     notes.push('לא הוגדר קהל יעד ברור, ולכן קשה לדעת למי ההבטחה בסרטון אמורה לדבר.');
@@ -185,7 +247,7 @@ function contentEvidence(input) {
     notes.push(`הבעיה שהיוצר דיווח עליה: ${problem}.`);
   }
 
-  return { hasContext, goal, problem, audience, contentBrief, notes, fixes };
+  return { hasContext, goal, problem, audience, contentBrief, notes, fixes, scores: scores };
 }
 
 function unique(items, max = 8) {
@@ -240,12 +302,14 @@ function deepRecommendations({ input, evidence, content, upstream }) {
   platformTips.push('שמור טקסט מרכזי באזור בטוח: לא צמוד לתחתית ולא מכוסה בכפתורי האפליקציה.');
   platformTips.push('אם יש דיבור, הוסף כתוביות גדולות עם 4-7 מילים בכל רגע.');
 
-  const hookSuggestion = content.audience
-    ? `אם אתה ${content.audience} ו${reportedProblem !== 'לא צוין' ? `-${reportedProblem}` : 'הסרטונים שלך לא מביאים תוצאה'}, תראה את זה לפני שאתה מעלה עוד רילס.`
+  const aiHook = asText(upstream?.analysis?.hookSuggestion);
+  const aiScript = asText(upstream?.analysis?.scriptSuggestion);
+  const fallbackHook = content.audience
+    ? `אם אתה ${content.audience} ו${reportedProblem !== 'לא צוין' ? reportedProblem : 'הסרטונים שלך לא מביאים תוצאה'}, תראה את זה לפני שאתה מעלה עוד רילס.`
     : 'אם הסרטונים שלך לא מביאים תוצאה, כנראה שהבעיה מתחילה ב-3 השניות הראשונות.';
 
-  const scriptSuggestion = [
-    `0-2 שניות: פנייה חדה לקהל: "${hookSuggestion}"`,
+  const fallbackScript = [
+    `0-2 שניות: פנייה חדה לקהל: "${fallbackHook}"`,
     `2-6 שניות: הצג את הבעיה הספציפית בלי הקדמות.`,
     `6-14 שניות: תן דוגמה/הוכחה אחת שמראה שאתה יודע על מה אתה מדבר.`,
     `14-22 שניות: תן פתרון אחד פרקטי שאפשר ליישם מיד.`,
@@ -253,13 +317,13 @@ function deepRecommendations({ input, evidence, content, upstream }) {
   ].join('\n');
 
   return {
-    priority: unique([...priority, ...asArray(upstream?.['PRIORITY FIXES'] ?? upstream?.analysis?.priorityFixes)], 5),
-    why: unique([...why, ...asArray(upstream?.['WHY IT FAILED'] ?? upstream?.analysis?.whyItFailed)], 8),
-    changes: unique([...changes, ...asArray(upstream?.['WHAT TO CHANGE'] ?? upstream?.analysis?.whatToChange)], 8),
-    improve: unique([...improve, ...asArray(upstream?.['HOW TO IMPROVE'] ?? upstream?.analysis?.howToImprove)], 8),
-    platformTips: unique([...platformTips, ...asArray(upstream?.['PLATFORM TIPS'] ?? upstream?.analysis?.platformTips)], 8),
-    hookSuggestion,
-    scriptSuggestion,
+    priority: unique([...asArray(upstream?.analysis?.priorityFixes), ...priority], 5),
+    why: unique([...asArray(upstream?.analysis?.whyItFailed), ...why], 8),
+    changes: unique([...asArray(upstream?.analysis?.whatToChange), ...changes], 8),
+    improve: unique([...asArray(upstream?.analysis?.howToImprove), ...improve], 8),
+    platformTips: unique([...asArray(upstream?.analysis?.platformTips), ...platformTips], 8),
+    hookSuggestion: aiHook.length > 20 ? aiHook : fallbackHook,
+    scriptSuggestion: aiScript.length > 40 ? aiScript : fallbackScript,
   };
 }
 
@@ -283,50 +347,64 @@ function normalizeUpstream(data, input) {
   const evidence = visualEvidence(input);
   const content = contentEvidence(input);
   const recommendations = deepRecommendations({ input, evidence, content, upstream: data });
-  const upperScore = data?.SCORE;
-  const score = clampScore(upperScore ?? data?.analysis?.score);
-  const whyItFailed = asArray(data?.['WHY IT FAILED'] ?? data?.analysis?.whyItFailed);
-  const whatToChange = asArray(data?.['WHAT TO CHANGE'] ?? data?.analysis?.whatToChange);
-  const howToImprove = asArray(data?.['HOW TO IMPROVE'] ?? data?.analysis?.howToImprove);
-  const categories = data?.analysis?.categories && typeof data.analysis.categories === 'object'
-    ? data.analysis.categories
-    : buildCategories(score, data?.CATEGORIES ?? data?.analysis?.categories);
+  const aiAnalysis = data?.analysis && typeof data.analysis === 'object' ? data.analysis : {};
+  const aiScore = clampScore(aiAnalysis.score ?? data?.SCORE);
+  const categories = aiAnalysis.categories && typeof aiAnalysis.categories === 'object'
+    ? aiAnalysis.categories
+    : buildCategories(aiScore, data?.CATEGORIES);
+
+  const hookNoteMeasured = evidence.hasFrames
+    ? evidence.notes.find((note) => note.includes('שלוש השניות')) || evidence.notes[1] || 'הפתיחה נמדדה לפי שינוי ויזואלי וחדות.'
+    : '';
+  const visualNoteMeasured = evidence.hasFrames ? evidence.notes[1] : '';
+  const platformNoteMeasured = Number(input?.height) > Number(input?.width)
+    ? 'הפורמט אנכי ומתאים יותר לרילס/טיקטוק.'
+    : 'הפורמט אינו אנכי, וזה פוגע בהתאמה לפלטפורמות קצרות.';
+
   const mergedCategories = {
     ...categories,
     hook: {
       ...categories.hook,
-      score: evidence.scores.hook,
-      note: evidence.hasFrames
-        ? `לפי דגימות 0-3 שניות: ${evidence.notes.find((note) => note.includes('שלוש השניות')) || 'הפתיחה נמדדה לפי שינוי ויזואלי וחדות.'}`
-        : categories.hook?.note,
+      score: blendScore(evidence.scores.hook, categories.hook?.score, 0.55),
+      note: mergeNote(hookNoteMeasured, categories.hook?.note, 'בדוק שהפתיחה עוצרת גלילה תוך 3 שניות.'),
     },
     pacing: {
       ...categories.pacing,
-      score: evidence.scores.pacing,
-      note: evidence.hasFrames
-        ? 'הקצב נמדד לפי שינויי סצנה בין פריימים שנדגמו מהסרטון.'
-        : categories.pacing?.note,
+      score: blendScore(evidence.scores.pacing, categories.pacing?.score, 0.6),
+      note: mergeNote(
+        evidence.hasFrames ? 'הקצב נמדד לפי שינויי סצנה בין פריימים שנדגמו מהסרטון.' : '',
+        categories.pacing?.note,
+        'שמור על שינוי ויזואלי כל 1-2 שניות.',
+      ),
     },
     visual: {
       ...categories.visual,
-      score: evidence.scores.visual,
-      note: evidence.hasFrames ? evidence.notes[1] : categories.visual?.note,
+      score: blendScore(evidence.scores.visual, categories.visual?.score, 0.65),
+      note: mergeNote(visualNoteMeasured, categories.visual?.note, 'שפר תאורה, חדות וקונטרסט.'),
+    },
+    message: {
+      ...categories.message,
+      score: blendScore(content.scores.message, categories.message?.score, 0.5),
+      note: mergeNote(content.contentBrief ? 'נבדק לפי תיאור התוכן שסופק.' : '', categories.message?.note, 'חדד הבטחה ו-CTA אחד.'),
+    },
+    audio: {
+      ...categories.audio,
+      score: blendScore(content.scores.audio, categories.audio?.score, 0.35),
+      note: mergeNote('', categories.audio?.note, 'ודא שיש מוזיקה/דיבור ברור וכתוביות.'),
     },
     platformFit: {
       ...categories.platformFit,
-      score: evidence.scores.platformFit,
-      note: Number(input?.height) > Number(input?.width)
-        ? 'הפורמט אנכי ומתאים יותר לרילס/טיקטוק.'
-        : 'הפורמט אינו אנכי, וזה פוגע בהתאמה לפלטפורמות קצרות.',
+      score: blendScore(evidence.scores.platformFit, categories.platformFit?.score, 0.55),
+      note: mergeNote(platformNoteMeasured, categories.platformFit?.note, 'התאם לפורמט ולאורך של TikTok/Reels.'),
     },
   };
-  const overallScore = Math.round(
-    (score + evidence.scores.hook + evidence.scores.pacing + evidence.scores.visual + evidence.scores.platformFit) / 5,
-  );
-  const priorityFixes = [
-    ...recommendations.priority,
-    ...asArray(data?.['PRIORITY FIXES'] ?? data?.analysis?.priorityFixes),
-  ].slice(0, 5);
+
+  const categoryScores = Object.values(mergedCategories).map((cat) => cat.score);
+  const overallScore = Math.round(categoryScores.reduce((sum, s) => sum + s, 0) / categoryScores.length);
+  const aiSummary = asText(aiAnalysis.summary);
+  const priorityFixes = recommendations.priority.slice(0, 5);
+  const aiTimeline = normalizeTimeline(aiAnalysis.timeline);
+  const timeline = aiTimeline.length ? aiTimeline : evidence.timeline;
 
   return {
     demo: false,
@@ -345,25 +423,28 @@ function normalizeUpstream(data, input) {
     frameTimestamps: (input?.frameMetrics || []).map((frame) => frame.second).filter(Number.isFinite),
     analysis: {
       score: overallScore,
-      verdict: String(data?.VERDICT || data?.analysis?.verdict || 'הניתוח הושלם.'),
+      verdict: asText(aiAnalysis.verdict, 'הניתוח הושלם.'),
       summary: [
         evidence.hasFrames
           ? `${evidence.notes[0]} ${evidence.notes[1]}`
-          : 'לא התקבלו דגימות פריימים, לכן הניתוח הוויזואלי מוגבל.',
-        content.hasContext
-          ? `הניתוח משלב את המטרה/קהל/תיאור שסופקו כדי לבדוק מסר ו-CTA.`
-          : 'לא סופק מספיק קונטקסט על המסר, לכן הדוח לא ממציא תמלול ומתמקד במה שאפשר למדוד.',
-        `הבעיה המרכזית לטפל בה: ${priorityFixes[0] || 'לחזק Hook, קצב ו-CTA.'}`,
-      ].join(' '),
+          : 'לא התקבלו דגימות פריימים — הניתוח הוויזואלי מוגבל.',
+        Array.isArray(input?.frameImages) && input.frameImages.length
+          ? `נשלחו ${input.frameImages.length} פריימים לניתוח Vision.`
+          : '',
+        aiSummary || (content.hasContext
+          ? 'הניתוח משלב את המטרה/קהל/תיאור שסופקו.'
+          : 'הוסף תיאור תוכן לניתוח מסר מדויק יותר.'),
+        `עדיפות ראשונה: ${priorityFixes[0] || 'חזק Hook, קצב ו-CTA.'}`,
+      ].filter(Boolean).join(' '),
       categories: mergedCategories,
       priorityFixes,
       whyItFailed: recommendations.why,
       whatToChange: recommendations.changes,
       howToImprove: recommendations.improve,
-      hookSuggestion: recommendations.hookSuggestion || String(data?.['HOOK SUGGESTION'] || data?.analysis?.hookSuggestion || ''),
-      scriptSuggestion: recommendations.scriptSuggestion || String(data?.['SCRIPT SUGGESTION'] || data?.analysis?.scriptSuggestion || ''),
+      hookSuggestion: recommendations.hookSuggestion,
+      scriptSuggestion: recommendations.scriptSuggestion,
       platformTips: recommendations.platformTips,
-      timeline: (evidence.timeline.length ? evidence.timeline : normalizeTimeline(data?.TIMELINE ?? data?.analysis?.timeline)),
+      timeline,
     },
   };
 }
