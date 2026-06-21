@@ -15,6 +15,7 @@
     "test:comprehensive": "node scripts/test-comprehensive.mjs",
     "test:quality": "node scripts/test-site-quality.mjs",
     "test:supabase": "node scripts/check-supabase.mjs",
+    "test:free-usage": "node scripts/test-free-usage.mjs",
     "test:all": "npm test && npm run build && npm run test:quality && npm run test:smoke && npm run test:comprehensive",
     "build": "cd client && npm run build",
     "start": "node server/index.js",

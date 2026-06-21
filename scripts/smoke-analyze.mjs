@@ -46,18 +46,26 @@ function assert(condition, message) {
 }
 
 async function testGet() {
-  const res = await fetch(BASE, { method: 'GET' });
+  const fp = `smoke-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const res = await fetch(BASE, {
+    method: 'GET',
+    headers: { 'X-Device-Fingerprint': fp },
+  });
   assert(res.ok, `GET failed: ${res.status}`);
   const data = await res.json();
   assert(data.ok === true, 'GET health check missing ok:true');
-  console.log('✓ GET health', data.service || data.model || 'ok');
-  return data;
+  assert(data.freeRemaining === 0 || data.freeRemaining === 1, 'GET health missing freeRemaining');
+  console.log('✓ GET health', data.service || data.model || 'ok', 'freeRemaining=', data.freeRemaining);
+  return { fp, data };
 }
 
-async function testPost() {
+async function testPost(fingerprint) {
   const res = await fetch(BASE, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Device-Fingerprint': fingerprint,
+    },
     body: JSON.stringify(mockPayload),
   });
   const data = await res.json();
@@ -82,8 +90,8 @@ async function testPost() {
 
 async function main() {
   console.log('Smoke test:', BASE);
-  await testGet();
-  await testPost();
+  const { fp } = await testGet();
+  await testPost(fp);
   console.log('All smoke tests passed.');
 }
 

@@ -113,6 +113,7 @@
 
 .btn-action {
   padding: 0.7rem 1.15rem;
+  min-height: var(--touch-min);
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface-2);
@@ -120,6 +121,9 @@
   font-size: 0.88rem;
   font-weight: 600;
   transition: all 0.2s var(--ease);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn-action:hover {
@@ -779,7 +783,7 @@
 
 @media (max-width: 720px) {
   .report__verdict-wrap { flex-direction: column; align-items: center; text-align: center; }
-  .report__score-block { text-align: center; }
+  .report__score-block { text-align: center; width: 100%; }
   .report__meta { justify-content: center; }
   .category-scores__grid { grid-template-columns: 1fr; }
   .improvement-plan__grid { grid-template-columns: 1fr; }
@@ -787,4 +791,103 @@
   .report__actions { flex-direction: column; }
   .btn-action { width: 100%; text-align: center; }
   .report-sources { justify-content: center; }
+
+  .report__top,
+  .improvement-plan,
+  .category-scores,
+  .timeline,
+  .priority-fixes,
+  .measured-evidence,
+  .detailed-findings {
+    padding: 1.15rem 1rem;
+  }
+
+  .report__summary {
+    font-size: 0.9rem;
+    padding: 0.85rem 1rem;
+  }
+
+  .report__verdict {
+    font-size: 1.05rem;
+  }
+
+  .score-ring {
+    width: 96px;
+    height: 96px;
+  }
+
+  .score-ring__value {
+    font-size: 2rem;
+  }
+
+  .measured-evidence__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .timeline__track {
+    margin-right: 0.35rem;
+    padding-right: 1rem;
+  }
+
+  .timeline__dot {
+    right: -1.35rem;
+  }
+
+  .hook-text {
+    font-size: 1rem;
+    padding: 0.85rem 1rem;
+    word-break: break-word;
+  }
+
+  .report-section--hook,
+  .report-section--script {
+    padding: 1.15rem 1rem;
+  }
+
+  .report-section--script pre {
+    font-size: 0.85rem;
+    overflow-wrap: anywhere;
+  }
+
+  .report__bottom-cta {
+    padding: 1.5rem 1rem;
+  }
+
+  .detailed-findings__top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .category-item__header {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 360px) {
+  .report__top {
+    padding: 1rem 0.85rem;
+  }
+
+  .score-ring {
+    width: 88px;
+    height: 88px;
+  }
+
+  .score-ring__value {
+    font-size: 1.75rem;
+  }
+
+  .improvement-plan__card p {
+    font-size: 0.85rem;
+  }
+
+  .category-item {
+    padding: 0.85rem;
+  }
+
+  .report__demo-badge {
+    font-size: 0.7rem;
+    word-break: break-word;
+  }
 }

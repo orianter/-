@@ -537,6 +537,7 @@ export function getHealthInfo(apiKey) {
     demoMode: false,
     maxDurationSec: 60,
     maxFileMb: 100,
+    freeTierLimit: 1,
     service: apiKey ? 'vercel-openai' : 'supabase-proxy',
     model: 'gpt-4o',
     vision: true,

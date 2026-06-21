@@ -1,3 +1,8 @@
+import {
+  freeLimitResponse,
+  markFreeUsageUsed,
+  resolveFreeUsage,
+} from './lib/freeUsage.js';
 import { getHealthInfo, runOpenAiAnalysis } from './lib/openaiAnalyze.js';
 
 const SUPABASE_URL = 'https://hgfyokwxcvuufzskvloi.supabase.co';
@@ -826,10 +831,35 @@ async function trySupabaseAnalysis(body) {
   return isStaleAnalysis(parsed) ? null : parsed;
 }
 
+async function runAnalysis(body, openaiKey) {
+  if (openaiKey) {
+    try {
+      const upstream = await runOpenAiAnalysis(body || {}, openaiKey);
+      return { ok: true, data: normalizeUpstream(upstream, body || {}) };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!isOpenAiKeyError(message)) {
+        return { ok: false, status: 500, error: message };
+      }
+    }
+  }
+
+  const supabaseResult = await trySupabaseAnalysis(body || {});
+  if (supabaseResult) {
+    return { ok: true, data: normalizeUpstream(supabaseResult, body || {}) };
+  }
+
+  return {
+    ok: false,
+    status: 503,
+    error: 'ניתוח AI לא זמין. הוסף OPENAI_API_KEY תקין ב-Vercel Environment Variables, או פרוס מחדש את Supabase Function analyze.',
+  };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Device-Fingerprint');
 
   if (req.method === 'OPTIONS') {
     res.status(204).end();
@@ -844,40 +874,44 @@ export default async function handler(req, res) {
   const openaiKey = process.env.OPENAI_API_KEY?.trim();
 
   try {
+    const usage = await resolveFreeUsage(req, req.body || {});
+
     if (req.method === 'GET') {
+      const freeRemaining = usage.allowed ? 1 : 0;
       if (openaiKey) {
-        sendJson(res, 200, getHealthInfo(openaiKey));
+        sendJson(res, 200, { ...getHealthInfo(openaiKey), freeRemaining });
         return;
       }
       const { upstream, text } = await fetchSupabase('GET');
+      let payload;
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = {};
+      }
+      if (upstream.ok && payload && typeof payload === 'object') {
+        payload.freeRemaining = freeRemaining;
+        sendJson(res, upstream.status, payload);
+        return;
+      }
       res.status(upstream.status).setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json');
       res.send(text);
       return;
     }
 
-    if (openaiKey) {
-      try {
-        const upstream = await runOpenAiAnalysis(req.body || {}, openaiKey);
-        sendJson(res, 200, normalizeUpstream(upstream, req.body || {}));
-        return;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (!isOpenAiKeyError(message)) {
-          sendJson(res, 500, { error: message });
-          return;
-        }
-      }
-    }
-
-    const supabaseResult = await trySupabaseAnalysis(req.body || {});
-    if (supabaseResult) {
-      sendJson(res, 200, normalizeUpstream(supabaseResult, req.body || {}));
+    if (!usage.allowed) {
+      sendJson(res, usage.status || 402, freeLimitResponse(usage));
       return;
     }
 
-    sendJson(res, 503, {
-      error: 'ניתוח AI לא זמין. הוסף OPENAI_API_KEY תקין ב-Vercel Environment Variables, או פרוס מחדש את Supabase Function analyze.',
-    });
+    const analysisResult = await runAnalysis(req.body || {}, openaiKey);
+    if (!analysisResult.ok) {
+      sendJson(res, analysisResult.status, { error: analysisResult.error });
+      return;
+    }
+
+    await markFreeUsageUsed(req, res, usage);
+    sendJson(res, 200, analysisResult.data);
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : 'Proxy error' });
   }

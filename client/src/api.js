@@ -1,3 +1,5 @@
+import { getDeviceFingerprint } from './lib/deviceFingerprint';
+
 const DEFAULT_SUPABASE_URL = 'https://hgfyokwxcvuufzskvloi.supabase.co';
 const DEFAULT_SUPABASE_ANON_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhnZnlva3d4Y3Z1dWZ6c2t2bG9pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE5NTQ3NjIsImV4cCI6MjA5NzUzMDc2Mn0.UfJBN82yipuLKfFkxNSbRRj2nvSpwzPILuB5sj_WDCU';
@@ -11,14 +13,25 @@ export function analyzeFunctionUrl() {
   return import.meta.env.PROD ? '/api/analyze' : `${supabaseUrl}/functions/v1/analyze`;
 }
 
-export function supabaseHeaders(extra = {}) {
+export async function analyzeHeaders(extra = {}) {
+  const fingerprint = await getDeviceFingerprint();
+  const headers = {
+    'X-Device-Fingerprint': fingerprint,
+    ...extra,
+  };
+
   if (import.meta.env.PROD) {
-    return extra;
+    return headers;
   }
 
   return {
     apikey: supabaseAnonKey,
     Authorization: `Bearer ${supabaseAnonKey}`,
-    ...extra,
+    ...headers,
   };
+}
+
+/** @deprecated use analyzeHeaders */
+export function supabaseHeaders(extra = {}) {
+  return extra;
 }

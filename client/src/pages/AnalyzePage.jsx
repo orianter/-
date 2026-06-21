@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { analyzeFunctionUrl, hasSupabaseConfig, supabaseHeaders } from '../api';
+import { analyzeFunctionUrl, analyzeHeaders, hasSupabaseConfig } from '../api';
 import { AiDisclaimer } from '../components/AiDisclaimer';
 import {
   AnalysisSection,
@@ -432,7 +432,7 @@ export default function AnalyzePage() {
   const [dragActive, setDragActive] = useState(false);
   const [videoLink, setVideoLink] = useState('');
   const [linkLoading, setLinkLoading] = useState(false);
-  const [videoSource, setVideoSource] = useState('');
+  const [freeBlocked, setFreeBlocked] = useState(false);
   const fileInputRef = useRef(null);
   const stepTimerRef = useRef(null);
 
@@ -444,9 +444,17 @@ export default function AnalyzePage() {
 
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
-    fetch(analyzeFunctionUrl(), { signal: ctrl.signal, headers: supabaseHeaders() })
+    analyzeHeaders()
+      .then((headers) => fetch(analyzeFunctionUrl(), {
+        signal: ctrl.signal,
+        headers,
+        credentials: 'include',
+      }))
       .then((r) => r.json())
-      .then(setApiReady)
+      .then((data) => {
+        setApiReady(data);
+        if (data.freeRemaining === 0) setFreeBlocked(true);
+      })
       .catch(() => setApiReady({ ok: false, hasApiKey: false, unreachable: true }))
       .finally(() => clearTimeout(timer));
     return () => {
@@ -563,13 +571,21 @@ export default function AnalyzePage() {
       if (whisperAudio?.available && whisperAudio.base64) {
         payload.audioWavBase64 = whisperAudio.base64;
       }
+      const headers = await analyzeHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch(analyzeFunctionUrl(), {
         method: 'POST',
-        headers: supabaseHeaders({ 'Content-Type': 'application/json' }),
+        headers,
+        credentials: 'include',
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'שגיאה בניתוח');
+      if (!res.ok) {
+        if (data.code === 'FREE_LIMIT_EXCEEDED' || res.status === 402) {
+          setFreeBlocked(true);
+          setApiReady((prev) => ({ ...(prev || {}), freeRemaining: 0 }));
+        }
+        throw new Error(data.error || 'שגיאה בניתוח');
+      }
       setStepIndex(STEPS.length - 1);
       setResult(data);
       setTimeout(() => {
@@ -635,7 +651,21 @@ export default function AnalyzePage() {
         </p>
       </div>
 
-      {apiReady && apiReady.ok && !apiReady.demoMode && !loading && !result && (
+      {apiReady && apiReady.ok && apiReady.freeRemaining === 1 && !apiReady.demoMode && !loading && !result && !freeBlocked && (
+        <div className="analyze-alert analyze-alert--ok">
+          <strong>✓ המערכת מוכנה.</strong> יש לך ניתוח חינמי אחד — העלה סרטון, מלא את הפרטים, והניתוח יתחיל. זמן משוער: 30–60 שניות.
+        </div>
+      )}
+
+      {freeBlocked && !loading && !result && (
+        <div className="analyze-alert analyze-alert--warn" role="alert">
+          <strong>הניתוח החינמי כבר נוצל.</strong>{' '}
+          כדי לנתח סרטון נוסף —{' '}
+          <Link to="/#pricing">בחר מסלול</Link>.
+        </div>
+      )}
+
+      {apiReady && apiReady.ok && apiReady.freeRemaining !== 1 && !apiReady.demoMode && !loading && !result && !freeBlocked && (
         <div className="analyze-alert analyze-alert--ok">
           <strong>✓ המערכת מוכנה.</strong> העלה סרטון, מלא את הפרטים — והניתוח יתחיל. זמן משוער: 30–60 שניות.
         </div>
@@ -794,7 +824,7 @@ export default function AnalyzePage() {
                   </svg>
                 </div>
                 <p className="dropzone__title">גרור סרטון לכאן</p>
-                <p className="dropzone__sub">או לחץ לבחירה מהמחשב</p>
+                <p className="dropzone__sub">או לחץ לבחירת קובץ מהמכשיר</p>
                 <span className="dropzone__hint">MP4 · MOV · WebM · עד 60 שניות</span>
               </>
             )}
@@ -888,6 +918,12 @@ export default function AnalyzePage() {
           {error && (
             <div className="analyze-alert analyze-alert--error" role="alert" aria-live="assertive">
               {error}
+              {freeBlocked && (
+                <>
+                  {' '}
+                  <Link to="/#pricing">בחר מסלול ←</Link>
+                </>
+              )}
             </div>
           )}
 
@@ -895,11 +931,15 @@ export default function AnalyzePage() {
 
           <button
             className="btn-analyze"
-            disabled={!file || linkLoading || !apiReady || apiReady.unreachable || apiReady.missingConfig}
+            disabled={!file || linkLoading || freeBlocked || !apiReady || apiReady.unreachable || apiReady.missingConfig}
             onClick={analyze}
             aria-describedby="analyze-help"
           >
-            {apiReady?.demoMode ? 'נתח את הסרטון (הדגמה) ←' : 'קבל משוב AI לסרטון ←'}
+            {freeBlocked
+              ? 'הניתוח החינמי נוצל — בחר מסלול'
+              : apiReady?.demoMode
+                ? 'נתח את הסרטון (הדגמה) ←'
+                : 'קבל משוב AI לסרטון ←'}
           </button>
 
           <p id="analyze-help" className="analyze-disclaimer">

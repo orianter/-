@@ -1,9 +1,28 @@
+import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import './Layout.css';
 
 export function Navbar() {
   const { pathname } = useLocation();
   const onAnalyze = pathname === '/analyze';
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    document.body.classList.toggle('nav-open', menuOpen);
+    return () => document.body.classList.remove('nav-open');
+  }, [menuOpen]);
+
+  const navLinks = !onAnalyze && (
+    <>
+      <a href="/#how" onClick={() => setMenuOpen(false)}>איך זה עובד</a>
+      <a href="/#pricing" onClick={() => setMenuOpen(false)}>מחירים</a>
+      <a href="/#faq" onClick={() => setMenuOpen(false)}>שאלות</a>
+    </>
+  );
 
   return (
     <nav className="navbar" aria-label="ניווט ראשי">
@@ -13,19 +32,41 @@ export function Navbar() {
           <span>Reel Analyzer</span>
         </Link>
 
-        <div className="navbar__links">
-          {!onAnalyze && (
-            <>
-              <a href="/#how">איך זה עובד</a>
-              <a href="/#pricing">מחירים</a>
-              <a href="/#faq">שאלות</a>
-            </>
-          )}
-          <Link to="/analyze" className="navbar__cta">
+        <button
+          type="button"
+          className="navbar__toggle"
+          aria-expanded={menuOpen}
+          aria-controls="navbar-menu"
+          aria-label={menuOpen ? 'סגור תפריט' : 'פתח תפריט'}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <span className="navbar__toggle-bar" aria-hidden="true" />
+          <span className="navbar__toggle-bar" aria-hidden="true" />
+          <span className="navbar__toggle-bar" aria-hidden="true" />
+        </button>
+
+        <div
+          id="navbar-menu"
+          className={`navbar__links ${menuOpen ? 'navbar__links--open' : ''}`}
+        >
+          {navLinks}
+          <Link
+            to="/analyze"
+            className="navbar__cta"
+            onClick={() => setMenuOpen(false)}
+          >
             {onAnalyze ? '← חזרה לדף הבית' : 'נתח סרטון'}
           </Link>
         </div>
       </div>
+      {menuOpen && (
+        <button
+          type="button"
+          className="navbar__backdrop"
+          aria-label="סגור תפריט"
+          onClick={() => setMenuOpen(false)}
+        />
+      )}
     </nav>
   );
 }

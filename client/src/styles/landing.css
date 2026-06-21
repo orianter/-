@@ -660,4 +660,166 @@
   }
 
   .pricing__guarantee { flex-direction: column; text-align: center; }
+
+  .how { padding: 3rem 0; }
+  .compare { padding: 3rem 0; }
+  .demo { padding: 3rem 0; }
+  .testimonials { padding: 3rem 0; }
+  .pricing { padding: 3rem 0; }
+  .faq { padding: 3rem 0; }
+}
+
+@media (max-width: 640px) {
+  .hero {
+    padding: 3rem max(1rem, var(--safe-left)) 2.5rem max(1rem, var(--safe-right));
+    padding-top: calc(2.5rem + var(--safe-top));
+  }
+
+  .hero h1 {
+    font-size: clamp(1.75rem, 8vw, 2.4rem);
+  }
+
+  .hero__sub {
+    font-size: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .hero__actions {
+    flex-direction: column;
+    align-items: stretch;
+    margin-bottom: 1.25rem;
+  }
+
+  .hero__social {
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 0.82rem;
+  }
+
+  .hero__pill {
+    font-size: 0.75rem;
+    padding: 0.35rem 0.85rem;
+    margin-bottom: 1rem;
+  }
+
+  .trust-strip__grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.85rem;
+    padding: 1.15rem;
+  }
+
+  .trust-stat span {
+    font-size: 0.72rem;
+  }
+
+  .audience { padding: 2rem 0 2.5rem; }
+
+  .audience-card,
+  .how-step,
+  .compare-card,
+  .testimonial-card {
+    padding: 1.25rem;
+  }
+
+  .how-step__num {
+    font-size: 2.25rem;
+    left: 1rem;
+  }
+
+  .pricing__toggle {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .pricing__toggle-btn {
+    flex: 1;
+    min-width: 120px;
+    min-height: var(--touch-min);
+    padding: 0.65rem 1rem;
+    font-size: 0.88rem;
+  }
+
+  .pricing-card {
+    padding: 1.5rem 1.25rem;
+  }
+
+  .pricing-card__amount {
+    font-size: 2.2rem;
+  }
+
+  .pricing__guarantee {
+    padding: 1rem 1.15rem;
+    margin-top: 1.5rem;
+  }
+
+  .faq-item__q {
+    min-height: var(--touch-min);
+    padding: 0.85rem 1rem;
+    font-size: 0.92rem;
+    text-align: right;
+  }
+
+  .faq-item__a {
+    padding: 0 1rem 1rem;
+    font-size: 0.88rem;
+  }
+
+  .final-cta {
+    padding: 1.5rem max(1rem, var(--safe-left)) calc(3rem + var(--safe-bottom)) max(1rem, var(--safe-right));
+  }
+
+  .final-cta__box {
+    padding: 2.25rem 1.25rem;
+  }
+
+  .demo-report {
+    padding: 1.15rem;
+    overflow: hidden;
+  }
+
+  .demo-report__badge {
+    position: static;
+    display: inline-block;
+    margin-bottom: 0.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .trust-strip__grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.65rem;
+    padding: 1rem 0.85rem;
+  }
+
+  .trust-stat strong {
+    font-size: 1.15rem;
+  }
+
+  .compare-card li,
+  .testimonial-card__quote {
+    font-size: 0.88rem;
+  }
+
+  .pricing-card__amount-row {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 360px) {
+  .hero h1 {
+    font-size: 1.65rem;
+  }
+
+  .hero__sub {
+    font-size: 0.92rem;
+  }
+
+  .trust-strip__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pricing__toggle-btn {
+    min-width: 0;
+    font-size: 0.82rem;
+  }
 }
