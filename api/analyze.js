@@ -487,6 +487,12 @@ function normalizeUpstream(data, input) {
     },
     transcript: '',
     frameTimestamps: (input?.frameMetrics || []).map((frame) => frame.second).filter(Number.isFinite),
+    dataSources: {
+      frameCount: (input?.frameMetrics || []).length,
+      visionFrames: (input?.frameImages || []).length,
+      audioAnalyzed: Boolean(input?.audioMetrics?.analyzed),
+      hasContentBrief: Boolean(content.contentBrief),
+    },
     analysis: {
       score: overallScore,
       verdict: asText(aiAnalysis.verdict, 'הניתוח הושלם.'),

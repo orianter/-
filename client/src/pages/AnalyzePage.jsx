@@ -5,8 +5,12 @@ import {
   AnalysisSection,
   buildReportText,
   CategoryScores,
+  ImprovementPlan,
   PriorityFixes,
+  ReportDataSources,
   ScoreRing,
+  scoreColor,
+  scoreVerdictLabel,
   Timeline,
 } from '../components/Report';
 
@@ -544,10 +548,14 @@ export default function AnalyzePage() {
   const platformLabel = PLATFORMS.find((p) => p.id === result?.platform)?.label;
 
   return (
-    <div className="analyze-page">
+    <div className={`analyze-page ${result ? 'analyze-page--report' : ''}`}>
       <div className="analyze-page__head">
-        <h1>נתח את הסרטון שלך</h1>
-        <p>בחר רילס או טיקטוק וקבל דוח AI מקצועי — דגימת פריימים אמיתית + ניתוח Vision</p>
+        <h1>{result ? 'הדוח שלך מוכן' : 'נתח את הסרטון שלך'}</h1>
+        <p>
+          {result
+            ? 'ניתוח מבוסס נתונים אמיתיים — פריימים, אודיו, Vision ו-AI'
+            : 'העלה רילס וקבל דוח מקצועי עם ציונים, תיקונים והסברים מדויקים'}
+        </p>
       </div>
 
       {apiReady && apiReady.missingConfig && (
@@ -574,6 +582,13 @@ export default function AnalyzePage() {
           <div className="loading-panel__spinner" />
           <h2>מנתח את הסרטון...</h2>
           <p>בדרך כלל 30–60 שניות. אל תסגור את הדף.</p>
+          <div className="loading-panel__progress">
+            <div
+              className="loading-panel__progress-bar"
+              style={{ width: `${Math.round(((stepIndex + 1) / STEPS.length) * 100)}%` }}
+            />
+          </div>
+          <p className="loading-panel__pct">{Math.round(((stepIndex + 1) / STEPS.length) * 100)}% הושלם</p>
           <div className="steps">
             {STEPS.map((step, i) => (
               <div
@@ -590,6 +605,20 @@ export default function AnalyzePage() {
 
       {!result && !loading && (
         <div className="analyze-panel">
+          <div className="analyze-tips">
+            <div className="analyze-tip">
+              <strong>🎯 למה הסרטון</strong>
+              לידים, מכירות, חשיפה — ממקד את הניתוח
+            </div>
+            <div className="analyze-tip">
+              <strong>👥 למי מיועד</strong>
+              קהל ספציפי = המלצות מדויקות
+            </div>
+            <div className="analyze-tip">
+              <strong>📝 מה קורה בסרטון</strong>
+              הכי חשוב לדיוק — Hook, CTA, טקסט
+            </div>
+          </div>
           <div
             className={`dropzone ${file ? 'dropzone--has-file' : ''} ${dragActive ? 'dropzone--drag' : ''}`}
             onDrop={onDrop}
@@ -643,6 +672,8 @@ export default function AnalyzePage() {
           )}
 
           <div className="form-grid">
+            <span className="form-section-label">פרטי הסרטון</span>
+
             <fieldset className="platform-picker">
               <legend>לאיזו פלטפורמה?</legend>
               <div className="platform-picker__options">
@@ -660,6 +691,8 @@ export default function AnalyzePage() {
                 ))}
               </div>
             </fieldset>
+
+            <span className="form-section-label">לניתוח מדויק יותר</span>
 
             <label>
               מה המטרה? <span className="label-hint">(מומלץ)</span>
@@ -726,10 +759,17 @@ export default function AnalyzePage() {
                 דוח הדגמה · מבוסס על נתוני הסרטון האמיתיים שלך
               </div>
             )}
+            <ReportDataSources sources={result.dataSources} />
             <div className="report__verdict-wrap">
               <ScoreRing score={analysis.score} />
-              <div>
+              <div className="report__score-block">
                 <p className="report__verdict-label">ציון כללי</p>
+                <span
+                  className="report__score-badge"
+                  style={{ color: scoreColor(analysis.score), borderColor: `${scoreColor(analysis.score)}44` }}
+                >
+                  {scoreVerdictLabel(analysis.score)}
+                </span>
                 {analysis.verdict && <p className="report__verdict">"{analysis.verdict}"</p>}
                 <p className="report__meta">
                   {platformLabel} · {result.durationSec} שניות
@@ -754,15 +794,44 @@ export default function AnalyzePage() {
             </div>
           </div>
 
+          <ImprovementPlan
+            priorityFixes={analysis.priorityFixes}
+            whatToChange={analysis.whatToChange}
+            howToImprove={analysis.howToImprove}
+          />
           <PriorityFixes items={analysis.priorityFixes} />
           <CategoryScores categories={analysis.categories} />
           <Timeline items={analysis.timeline} />
 
           <div className="report__sections">
-            <AnalysisSection title="למה לא עבד" items={analysis.whyItFailed} variant="fail" icon="✕" />
-            <AnalysisSection title="מה לשנות" items={analysis.whatToChange} variant="change" icon="✎" />
-            <AnalysisSection title="איך להפוך לטוב" items={analysis.howToImprove} variant="improve" icon="↑" />
-            <AnalysisSection title="טיפים לפלטפורמה" items={analysis.platformTips} variant="tips" icon="★" />
+            <AnalysisSection
+              title="למה לא עבד"
+              subtitle="סיבות ספציפיות לפי הנתונים"
+              items={analysis.whyItFailed}
+              variant="fail"
+              icon="✕"
+            />
+            <AnalysisSection
+              title="מה לשנות"
+              subtitle="שינויים קונקרטיים לסרטון הבא"
+              items={analysis.whatToChange}
+              variant="change"
+              icon="✎"
+            />
+            <AnalysisSection
+              title="איך להפוך לטוב"
+              subtitle="עקרונות לשיפור מתמשך"
+              items={analysis.howToImprove}
+              variant="improve"
+              icon="↑"
+            />
+            <AnalysisSection
+              title="טיפים לפלטפורמה"
+              subtitle={`מותאם ל-${platformLabel}`}
+              items={analysis.platformTips}
+              variant="tips"
+              icon="★"
+            />
           </div>
 
           {analysis.hookSuggestion && (

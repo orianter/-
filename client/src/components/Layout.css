@@ -13,9 +13,9 @@
   top: 0;
   z-index: 100;
   height: var(--nav-h);
-  background: rgba(6, 6, 11, 0.85);
-  backdrop-filter: blur(16px);
-  border-bottom: 1px solid rgba(42, 42, 61, 0.6);
+  background: rgba(5, 5, 8, 0.82);
+  backdrop-filter: blur(20px) saturate(1.3);
+  border-bottom: 1px solid var(--border);
 }
 
 .navbar__inner {

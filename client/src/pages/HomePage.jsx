@@ -8,7 +8,7 @@ import { COMPARISON, TESTIMONIALS, TRUST_STATS } from '../data/content';
 const STEPS = [
   { num: '1', title: 'העלה סרטון', desc: 'גרור רילס או טיקטוק עד דקה — MP4, MOV או WebM', icon: '📤' },
   { num: '2', title: 'ספר לנו קצת', desc: 'בחר פלטפורמה, מטרה, ומה לא עבד (אופציונלי)', icon: '📝' },
-  { num: '3', title: 'קבל דוח', desc: 'דוח AI עם מדדי פריימים — ציונים, תיקונים, hook ותסריט משופר', icon: '📊' },
+  { num: '3', title: 'קבל דוח', desc: 'ציונים, תוכנית שיפור, hook ותסריט — עם הסברים מדויקים', icon: '📊' },
 ];
 
 const AUDIENCE = [
@@ -35,8 +35,8 @@ export default function HomePage() {
             {' '}— ומה לשנות
           </h1>
           <p className="hero__sub">
-            העלה סרטון של עד דקה וקבל דוח מקצועי בעברית: ציונים, 3 תיקונים דחופים,
-            hook חלופי ותסריט משופר. הסרטון נשאר אצלך בדפדפן.
+            העלה סרטון וקבל דוח מקצועי: ציונים לפי קטגוריה, תוכנית שיפור,
+            hook חלופי ותסריט משופר — מבוסס פריימים, אודיו ו-Vision AI.
           </p>
           <div className="hero__actions">
             <Link to="/analyze" className="btn-hero">

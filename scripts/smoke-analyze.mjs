@@ -67,7 +67,12 @@ async function testPost() {
   assert(Array.isArray(data.analysis.priorityFixes) && data.analysis.priorityFixes.length >= 1, 'Missing priorityFixes');
   assert(data.analysis.categories?.hook, 'Missing hook category');
   assert(data.analysis.summary?.length > 20, 'Summary too short');
+  assert(Array.isArray(data.analysis.whatToChange), 'Missing whatToChange');
+  assert(Array.isArray(data.analysis.howToImprove), 'Missing howToImprove');
+  assert(data.dataSources?.frameCount >= 1, 'Missing dataSources.frameCount');
   console.log('✓ POST analyze score=', data.analysis.score, 'verdict=', data.analysis.verdict?.slice(0, 60));
+  console.log('  sources:', JSON.stringify(data.dataSources));
+  console.log('  fixes:', data.analysis.priorityFixes?.length, '| changes:', data.analysis.whatToChange?.length);
   return data;
 }
 
