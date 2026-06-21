@@ -66,25 +66,25 @@ export function ReportDataSources({ sources }) {
 
 export function ImprovementPlan({ priorityFixes, whatToChange, howToImprove }) {
   const steps = [
-    ...(priorityFixes || []).slice(0, 3).map((text, i) => ({
+    ...(priorityFixes || []).slice(0, 4).map((text, i) => ({
       num: i + 1,
       title: 'תיקון דחוף',
       text,
       type: 'urgent',
     })),
-    ...(whatToChange || []).slice(0, 2).map((text, i) => ({
+    ...(whatToChange || []).slice(0, 3).map((text, i) => ({
       num: (priorityFixes?.length || 0) + i + 1,
       title: 'מה לשנות',
       text,
       type: 'change',
     })),
-    ...(howToImprove || []).slice(0, 2).map((text, i) => ({
+    ...(howToImprove || []).slice(0, 3).map((text, i) => ({
       num: (priorityFixes?.length || 0) + (whatToChange?.length || 0) + i + 1,
       title: 'איך לשפר',
       text,
       type: 'grow',
     })),
-  ].slice(0, 6);
+  ].slice(0, 9);
 
   if (!steps.length) return null;
 
@@ -137,7 +137,84 @@ export function CategoryScores({ categories }) {
               />
             </div>
             <p className="category-item__note">{cat.note}</p>
+            {cat.detail && (cat.detail.whatWeSaw || cat.detail.exactFix) && (
+              <div className="category-item__detail">
+                {cat.detail.whatWeSaw && (
+                  <p><strong>מה נמדד:</strong> {cat.detail.whatWeSaw}</p>
+                )}
+                {cat.detail.whyItMatters && (
+                  <p><strong>למה זה משנה:</strong> {cat.detail.whyItMatters}</p>
+                )}
+                {cat.detail.exactFix && (
+                  <p className="category-item__fix"><strong>תיקון מדויק:</strong> {cat.detail.exactFix}</p>
+                )}
+              </div>
+            )}
           </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export function MeasuredEvidence({ items }) {
+  if (!items?.length) return null;
+
+  const sourceLabels = {
+    frames: 'פריימים',
+    audio: 'אודיו',
+    content: 'תוכן',
+    digest: 'מדידה',
+    metadata: 'מטא',
+  };
+
+  return (
+    <section className="measured-evidence">
+      <div className="measured-evidence__head">
+        <h3>נתונים שנמדדו מהסרטון</h3>
+        <p>מספרים אמיתיים מהקובץ — לא הערכות AI</p>
+      </div>
+      <div className="measured-evidence__grid">
+        {items.map((item, i) => (
+          <article key={`${item.label}-${i}`} className="measured-evidence__card">
+            <span className="measured-evidence__source">{sourceLabels[item.source] || item.source}</span>
+            <h4>{item.label}</h4>
+            <p className="measured-evidence__value">{item.value}</p>
+            {item.implication && <p className="measured-evidence__impact">{item.implication}</p>}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export function DetailedFindings({ items }) {
+  if (!items?.length) return null;
+
+  return (
+    <section className="detailed-findings">
+      <div className="detailed-findings__head">
+        <h3>ניתוח מפורט — ממצא + ראיה + תיקון</h3>
+        <p>כל שורה מסבירה בדיוק מה הבעיה, על מה היא מבוססת, ומה לעשות</p>
+      </div>
+      <div className="detailed-findings__list">
+        {items.map((item, i) => (
+          <article key={`${item.area}-${i}`} className="detailed-findings__item">
+            <div className="detailed-findings__top">
+              <span className="detailed-findings__area">{item.area}</span>
+              <span className="detailed-findings__num">{i + 1}</span>
+            </div>
+            <p className="detailed-findings__finding">{item.finding}</p>
+            {item.evidence && (
+              <p className="detailed-findings__evidence"><strong>ראיה:</strong> {item.evidence}</p>
+            )}
+            {item.impact && (
+              <p className="detailed-findings__impact"><strong>השפעה:</strong> {item.impact}</p>
+            )}
+            {item.fix && (
+              <p className="detailed-findings__fix"><strong>תיקון:</strong> {item.fix}</p>
+            )}
+          </article>
         ))}
       </div>
     </section>
@@ -219,6 +296,16 @@ export function buildReportText({ result, platformLabel }) {
   if (analysis.priorityFixes?.length) {
     lines.push('תיקונים דחופים:');
     analysis.priorityFixes.forEach((f, i) => lines.push(`${i + 1}. ${f}`));
+    lines.push('');
+  }
+
+  if (analysis.detailedFindings?.length) {
+    lines.push('ניתוח מפורט:');
+    analysis.detailedFindings.forEach((item, i) => {
+      lines.push(`${i + 1}. [${item.area}] ${item.finding}`);
+      if (item.evidence) lines.push(`   ראיה: ${item.evidence}`);
+      if (item.fix) lines.push(`   תיקון: ${item.fix}`);
+    });
     lines.push('');
   }
 

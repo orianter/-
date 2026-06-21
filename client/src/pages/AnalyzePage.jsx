@@ -5,7 +5,9 @@ import {
   AnalysisSection,
   buildReportText,
   CategoryScores,
+  DetailedFindings,
   ImprovementPlan,
+  MeasuredEvidence,
   PriorityFixes,
   ReportDataSources,
   ScoreRing,
@@ -213,7 +215,10 @@ function buildAnalysisDigest(frameMetrics, videoMeta, audioMetrics) {
   const hookFrames = frameMetrics.filter((f) => Number(f.second) <= 3);
   const hookChange = average(hookFrames.slice(1), 'sceneChange');
   const hookSharpness = average(hookFrames, 'sharpness');
+  const hookBrightness = average(hookFrames, 'brightness');
   const avgChange = average(frameMetrics.slice(1), 'sceneChange');
+  const avgBrightness = average(frameMetrics, 'brightness');
+  const avgSharpness = average(frameMetrics, 'sharpness');
   const findings = [];
 
   if (ratio !== null) {
@@ -222,9 +227,12 @@ function buildAnalysisDigest(frameMetrics, videoMeta, audioMetrics) {
       : `פורמט לא אנכי (${width}×${height}) — פוגע בפיד`);
   }
   if (durationSec > 35) findings.push(`אורך ${durationSec.toFixed(0)} שניות — ארוך יחסית לרילס`);
-  if (hookChange !== null && hookChange < 7) findings.push('ב-Hook (0-3 שנ\') יש מעט שינוי ויזואלי');
-  if (hookSharpness !== null && hookSharpness < 10) findings.push('הפתיחה נראית רכה/מטושטשת במדידה');
-  if (avgChange !== null && avgChange < 6) findings.push('קצב ויזואלי איטי לאורך הסרטון');
+  if (hookChange !== null && hookChange < 7) findings.push(`ב-Hook (0-3 שנ') שינוי ויזואלי ${Math.round(hookChange)}% — נמוך`);
+  if (hookSharpness !== null && hookSharpness < 10) findings.push(`חדות בפתיחה ${Math.round(hookSharpness)} — רכה/מטושטשת`);
+  if (hookBrightness !== null && hookBrightness < 70) findings.push(`בהירות בפתיחה ${Math.round(hookBrightness)} — חשוך`);
+  if (avgChange !== null && avgChange < 6) findings.push(`קצב ויזואלי ממוצע ${Math.round(avgChange)}% — איטי`);
+  if (avgBrightness !== null && avgBrightness < 70) findings.push(`בהירות ממוצעת ${Math.round(avgBrightness)} — חשוך`);
+  if (avgSharpness !== null && avgSharpness < 10) findings.push(`חדות ממוצעת ${Math.round(avgSharpness)} — נמוכה`);
   if (audioMetrics?.analyzed) {
     if (!audioMetrics.hasAudio) findings.push('כמעט אין אודיו מזוהה');
     else if (audioMetrics.openingWeak) findings.push('עוצמת האודיו בפתיחה חלשה יחסית לשאר הסרטון');
@@ -238,6 +246,8 @@ function buildAnalysisDigest(frameMetrics, videoMeta, audioMetrics) {
     isVertical916: near916 === true,
     hookSceneChange: hookChange !== null ? Math.round(hookChange) : null,
     avgSceneChange: avgChange !== null ? Math.round(avgChange) : null,
+    avgBrightness: avgBrightness !== null ? Math.round(avgBrightness) : null,
+    avgSharpness: avgSharpness !== null ? Math.round(avgSharpness) : null,
     audio: audioMetrics?.analyzed ? {
       hasAudio: audioMetrics.hasAudio,
       hookSilentRatio: audioMetrics.hookSilentRatio,
@@ -799,6 +809,8 @@ export default function AnalyzePage() {
             whatToChange={analysis.whatToChange}
             howToImprove={analysis.howToImprove}
           />
+          <DetailedFindings items={analysis.detailedFindings} />
+          <MeasuredEvidence items={analysis.measuredEvidence} />
           <PriorityFixes items={analysis.priorityFixes} />
           <CategoryScores categories={analysis.categories} />
           <Timeline items={analysis.timeline} />

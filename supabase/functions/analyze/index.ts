@@ -41,12 +41,51 @@ function asText(value: unknown, fallback = '') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
-function asArray(value: unknown, max = 8) {
+function asArray(value: unknown, max = 10) {
   if (!Array.isArray(value)) return [];
   return value
     .filter((item) => typeof item === 'string' && item.trim())
     .map((item) => item.trim())
     .slice(0, max);
+}
+
+function normalizeCategoryDetails(raw: unknown) {
+  if (!raw || typeof raw !== 'object') return null;
+  const source = raw as Record<string, unknown>;
+  const result: Record<string, { whatWeSaw: string; whyItMatters: string; exactFix: string }> = {};
+  for (const key of CATEGORY_KEYS) {
+    const c = source[key];
+    if (c && typeof c === 'object') {
+      const detail = c as Record<string, unknown>;
+      const normalized = {
+        whatWeSaw: asText(detail.whatWeSaw),
+        whyItMatters: asText(detail.whyItMatters),
+        exactFix: asText(detail.exactFix),
+      };
+      if (normalized.whatWeSaw || normalized.whyItMatters || normalized.exactFix) {
+        result[key] = normalized;
+      }
+    }
+  }
+  return Object.keys(result).length ? result : null;
+}
+
+function normalizeDetailedFindings(raw: unknown) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => {
+      const row = item as Record<string, unknown>;
+      return {
+        area: asText(row.area, 'כללי'),
+        finding: asText(row.finding),
+        evidence: asText(row.evidence),
+        impact: asText(row.impact),
+        fix: asText(row.fix),
+      };
+    })
+    .filter((item) => item.finding)
+    .slice(0, 12);
 }
 
 function parseModelJson(content: string) {
@@ -107,13 +146,15 @@ function normalizeAnalysis(raw: unknown) {
     verdict: asText(a.verdict),
     summary: asText(a.summary, 'הניתוח הושלם.'),
     categories,
-    priorityFixes: asArray(a.priorityFixes, 5),
-    whyItFailed: asArray(a.whyItFailed),
-    whatToChange: asArray(a.whatToChange),
-    howToImprove: asArray(a.howToImprove),
+    categoryDetails: normalizeCategoryDetails(a.categoryDetails),
+    detailedFindings: normalizeDetailedFindings(a.detailedFindings),
+    priorityFixes: asArray(a.priorityFixes, 6),
+    whyItFailed: asArray(a.whyItFailed, 8),
+    whatToChange: asArray(a.whatToChange, 8),
+    howToImprove: asArray(a.howToImprove, 8),
     hookSuggestion: asText(a.hookSuggestion),
     scriptSuggestion: asText(a.scriptSuggestion),
-    platformTips: asArray(a.platformTips),
+    platformTips: asArray(a.platformTips, 6),
     timeline,
   };
 }
@@ -232,19 +273,20 @@ function buildPrompt(input: Record<string, unknown>, hasVision: boolean) {
   const digestBlock = formatAnalysisDigest(input.analysisDigest);
 
   return `אתה אנליסט בכיר לתוכן ויראלי קצר (${platformLabel}) עם ניסיון של אלפי רילסים.
-תפקידך: ניתוח מדויק, ספציפי ופרקטי — לא משפטים גנריים.
+תפקידך: ניתוח מקיף, מדויק ומפורט — כל משפט חייב להיות מבוסס על נתון, שניה או פריים ספציפי.
 
-## כללי דיוק (חובה)
-- התבסס רק על הנתונים, הפריימים והתיאור שקיבלת
-- ציין שניות ספציפיות כשאתה מתייחס לבעיה
-- אל תמציא תמלול או טקסט — אלא אם רואים בפריים או כתוב ב-contentBrief
-- אם חסר מידע — כתוב "לא ניתן לבדוק X"
+## כללי דיוק (חובה מוחלטת)
+1. כל טענה חייבת לכלול ראיה: מספר מדד, שניה, או מה שרואים בפריים/ב-contentBrief
+2. ציין שניות מדויקות (למשל "בשנייה 0.5", "ב-3 השניות הראשונות")
+3. אל תמציא דיבור/טקסט — רק contentBrief ומה שרואים בפריימים
+4. אם חסר מידע — כתוב במפורש "לא ניתן לבדוק X כי Y"
+5. אל תכתוב משפטים גנריים כמו "שפר את ה-Hook" — תגיד בדיוק מה לשנות ולמה
 
 ## מה יש לך
 ${hasVision
-    ? '- יש לך גם תמונות פריים אמיתיות מהסרטון (מצורפות). השתמש בהן לניתוח ויזואלי, Hook, קומפozיציה, טקסט על המסך, תאורה, ופנים/מוצר.'
-    : '- אין תמונות, אבל יש מדדי פריימים אמיתיים שנדגמו מהסרטון בדפדפן.'}
-- יש מדדי אודיו אמיתיים — השתמש בהם. אין תמלול מילולי — אל תמציא דיבור מעבר ל-contentBrief.
+    ? '- תמונות פריים אמיתיות מהסרטון (מצורפות) — תאר מה רואים: פנים, טקסט, תאורה, קומפozיציה, מוצר'
+    : '- אין תמונות — הסתמך על מדדי פריימים שנדגמו מהסרטון בדפדפן'}
+- מדדי אודיו אמיתיים מהקובץ (אין תמלול מילולי)
 
 ## הקשר מהיוצר
 - פלטפורמה: ${platformLabel}
@@ -262,48 +304,65 @@ ${hasVision
 ## סיכום מדידה אוטומטי
 ${digestBlock || 'לא התקבל.'}
 
-## מדדי פריימים
+## מדדי פריימים (כל שורה = דגימה אמיתית)
 ${frameBlock}
 
 ## מדדי אודיו
 ${audioBlock}
 
-## כללי ניתוח
-1. Hook (0-3 שנ'): האם יש מתח, הבטחה, שאלה, או ניגוד? האם יש שינוי ויזואלי מספיק לפי המדדים?
-2. קצב: לפי שינויי סצנה בין פריימים — האם הסרטון סטטי מדי?
-3. מסר: לפי contentBrief — האם יש הבטחה ברורה, ערך, ו-CTA אחד?
-4. ויזואל: בהירות, חדות, קונטרסט, פורמט אנכי
-5. אודיו: לפי מדדי האודיו — שקט/חלש בפתיחה = בעיה
-6. התאמה לפלטפורמה: ${platformLabel} — hook מהיר, טקסט בטוח, אורך אידיאלי
+## מה לנתח בכל קטגוריה
+1. Hook (0-3 שנ'): מתח, הבטחה, שינוי ויזואלי, אודיו בפתיחה
+2. קצב: שינויי סצנה בין פריימים — האם סטטי?
+3. מסר: הבטחה, ערך, CTA — לפי contentBrief
+4. ויזואל: בהירות, חדות, קונטרסט, פורמát
+5. אודיו: עוצמה, שקט בפתיחה, מוזיקה/דיבור
+6. התאמה ל-${platformLabel}: hook מהיר, אורך, פורמát אנכי
 
-## פלט נדרש
-- כל המלצה חייבת להיות ספציפית לנתונים שקיבלת
-- priorityFixes: 3-5 תיקונים מדורגים לפי השפעה
-- hookSuggestion: פתיחה חלופית מותאמת לקהל "${audience !== 'לא צוין' ? audience : 'קהל היעד'}"
-- scriptSuggestion: outline מלא לפי ${Number.isFinite(durationSec) ? durationSec.toFixed(0) : '60'} שניות
-- timeline: נקודות זמן ספציפיות לפי הפריימים שנדגמו
+## דרישות פלט
+- summary: 3-5 משפטים עם מספרים/שניות
+- categories.note: 2-3 משפטים לכל קטגוריה עם ראיה
+- categoryDetails: לכל קטגוריה — מה ראינו, למה זה משנה, תיקון מדויק
+- detailedFindings: 6-10 ממצאים עם area, finding, evidence, impact, fix
+- priorityFixes: 4-6 תיקונים מדורגים
+- whyItFailed: 4-6 סיבות עם ראיה
+- whatToChange: 4-6 שינויים קונקרטיים
+- howToImprove: 4-6 המלצות מעשיות
+- timeline: נקודה לכל פריים שנדגם + המלצה ספציפית
+- hookSuggestion: פתיחה חלופית מותאמת ל-"${audience !== 'לא צוין' ? audience : 'קהל היעד'}"
+- scriptSuggestion: outline מלא ל-${Number.isFinite(durationSec) ? durationSec.toFixed(0) : '60'} שניות עם שניות
 
 החזר JSON בלבד, בלי markdown:
 {
   "score": <1-10>,
   "verdict": "<משפט אחד חד>",
-  "summary": "<2-4 משפטים שמסכמים את הממצאים העיקריים>",
+  "summary": "<3-5 משפטים>",
   "categories": {
-    "hook": { "score": <1-10>, "label": "פתיחה (Hook)", "note": "<משפט ספציפי>" },
-    "pacing": { "score": <1-10>, "label": "קצב ועריכה", "note": "<משפט>" },
-    "message": { "score": <1-10>, "label": "מסר ו-CTA", "note": "<משפט>" },
-    "visual": { "score": <1-10>, "label": "ויזואל", "note": "<משפט>" },
-    "audio": { "score": <1-10>, "label": "אודיו", "note": "<משפט>" },
-    "platformFit": { "score": <1-10>, "label": "התאמה לפלטפורמה", "note": "<משפט>" }
+    "hook": { "score": <1-10>, "label": "פתיחה (Hook)", "note": "<2-3 משפטים עם ראיה>" },
+    "pacing": { "score": <1-10>, "label": "קצב ועריכה", "note": "<2-3 משפטים>" },
+    "message": { "score": <1-10>, "label": "מסר ו-CTA", "note": "<2-3 משפטים>" },
+    "visual": { "score": <1-10>, "label": "ויזואל", "note": "<2-3 משפטים>" },
+    "audio": { "score": <1-10>, "label": "אודיו", "note": "<2-3 משפטים>" },
+    "platformFit": { "score": <1-10>, "label": "התאמה לפלטפורמה", "note": "<2-3 משפטים>" }
   },
-  "priorityFixes": ["<#1>", "<#2>", "<#3>"],
-  "whyItFailed": ["<סיבה>"],
-  "whatToChange": ["<שינוי>"],
-  "howToImprove": ["<המלצה>"],
+  "categoryDetails": {
+    "hook": { "whatWeSaw": "<מה נמדד/נראה>", "whyItMatters": "<השפעה על retention>", "exactFix": "<מה לעשות בדיוק>" },
+    "pacing": { "whatWeSaw": "...", "whyItMatters": "...", "exactFix": "..." },
+    "message": { "whatWeSaw": "...", "whyItMatters": "...", "exactFix": "..." },
+    "visual": { "whatWeSaw": "...", "whyItMatters": "...", "exactFix": "..." },
+    "audio": { "whatWeSaw": "...", "whyItMatters": "...", "exactFix": "..." },
+    "platformFit": { "whatWeSaw": "...", "whyItMatters": "...", "exactFix": "..." }
+  },
+  "detailedFindings": [
+    { "area": "Hook", "finding": "<מה הבעיה>", "evidence": "<מספר/שניה>", "impact": "<למה זה פוגע>", "fix": "<מה לעשות>" }
+  ],
+  "priorityFixes": ["<#1>", "<#2>", "<#3>", "<#4>"],
+  "whyItFailed": ["<סיבה + ראיה>"],
+  "whatToChange": ["<שינוי + איך>"],
+  "howToImprove": ["<המלצה + למה>"],
   "hookSuggestion": "<פתיחה חלופית>",
-  "scriptSuggestion": "<תסריט/outline>",
+  "scriptSuggestion": "<תסריט עם שניות>",
   "platformTips": ["<טיפ>"],
-  "timeline": [{ "second": <number>, "note": "<מה לשנות>" }]
+  "timeline": [{ "second": <number>, "note": "<מה רואים + מה לשנות>" }]
 }`;
 }
 
@@ -316,7 +375,7 @@ function buildMessages(input: Record<string, unknown>) {
     return [
       {
         role: 'system',
-        content: 'אתה אנליסט תוכן ויראלי מקצועי ברמה הגבוהה ביותר. עונה תמיד בעברית. החזר JSON תקין בלבד.',
+        content: 'אנליסט תוכן ויראלי מקצועי ברמה הגבוהה ביותר. כל טענה חייבת ראיה. עונה תמיד בעברית. החזר JSON תקין בלבד.',
       },
       { role: 'user', content: prompt },
     ];
@@ -342,7 +401,7 @@ function buildMessages(input: Record<string, unknown>) {
   return [
     {
       role: 'system',
-      content: 'אתה אנליסט תוכן ויראלי מקצועי עם יכולת ראייה. נתח את הפריימים האמיתיים מהסרטון. עונה בעברית. JSON בלבד.',
+      content: 'אנליסט תוכן ויראלי מקצועי עם יכולת ראייה. תאר בדיוק מה רואים בפריימים. עונה בעברית. JSON בלבד.',
     },
     { role: 'user', content },
   ];
@@ -398,7 +457,7 @@ serve(async (req) => {
         model,
         response_format: { type: 'json_object' },
         messages: buildMessages(input),
-        max_tokens: 4500,
+        max_tokens: 6000,
         temperature: 0.2,
       }),
     });

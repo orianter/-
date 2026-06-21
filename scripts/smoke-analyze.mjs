@@ -71,6 +71,8 @@ async function testPost() {
   assert(!String(data.analysis.summary || '').includes('נדרש פלט תקין'), 'Stale AI summary');
   assert(Array.isArray(data.analysis.whatToChange), 'Missing whatToChange');
   assert(Array.isArray(data.analysis.howToImprove), 'Missing howToImprove');
+  assert(Array.isArray(data.analysis.detailedFindings) && data.analysis.detailedFindings.length >= 1, 'Missing detailedFindings');
+  assert(Array.isArray(data.analysis.measuredEvidence) && data.analysis.measuredEvidence.length >= 1, 'Missing measuredEvidence');
   assert(data.dataSources?.frameCount >= 1, 'Missing dataSources.frameCount');
   console.log('✓ POST analyze score=', data.analysis.score, 'verdict=', data.analysis.verdict?.slice(0, 60));
   console.log('  sources:', JSON.stringify(data.dataSources));
