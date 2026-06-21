@@ -157,6 +157,53 @@ function blendScore(measured, ai, measuredWeight = 0.65) {
   return Math.round(m * measuredWeight + a * (1 - measuredWeight));
 }
 
+function pickScore(measured, aiScore, aiNote, options = {}) {
+  const { hasVision = false, measuredWeight = 0.55 } = options;
+  const ai = clampScore(aiScore, measured);
+  if (hasVision && asText(aiNote).length > 28) return ai;
+  return blendScore(measured, ai, measuredWeight);
+}
+
+function pickNote(measuredNote, aiNote, fallback, hasVision = false) {
+  const ai = asText(aiNote);
+  const measured = asText(measuredNote);
+  if (hasVision && ai.length > 28) return ai;
+  return mergeNote(measured, ai, fallback);
+}
+
+function audioEvidence(input) {
+  const audio = input?.audioMetrics;
+  if (!audio?.analyzed) {
+    return { score: 6, notes: ['לא ניתן לנתח אודיו מהקובץ — הניתוח מבוסס על תיאור התוכן בלבד.'], fixes: [] };
+  }
+
+  let score = 7;
+  const notes = [];
+  const fixes = [];
+
+  if (!audio.hasAudio) {
+    score = 4;
+    notes.push('כמעט אין אודיו מזוהה בסרטון.');
+    fixes.push('הוסף מוזיקת רקע או דיבור ברור — סרטון שקט מפסיד צופים.');
+  }
+  if (audio.hookSilentRatio > 50) {
+    score = Math.min(score, 5);
+    notes.push(`ב-3 השניות הראשונות יש ${audio.hookSilentRatio}% שקט — פוגע ב-Hook.`);
+    fixes.push('פתח עם משפט/מוזיקה/אפקט סאונד מיד בשנייה 0, לא אחרי 2 שניות שקט.');
+  }
+  if (audio.openingWeak) {
+    score = Math.min(score, 6);
+    notes.push('עוצמת האודיו בפתיחה חלשה יותר מהממוצע.');
+    fixes.push('הגבר דיבור/מוזיקה ב-3 השניות הראשונות.');
+  }
+  if (audio.mostlySilent) {
+    score = Math.min(score, 5);
+    notes.push(`הסרטון שקט ב-${audio.silentRatio}% מהזמן.`);
+  }
+
+  return { score, notes, fixes };
+}
+
 function mergeNote(measuredNote, aiNote, fallback) {
   const parts = [asText(measuredNote), asText(aiNote)].filter(Boolean);
   if (!parts.length) return fallback;
@@ -254,12 +301,15 @@ function unique(items, max = 8) {
   return [...new Set(items.filter(Boolean).map((item) => String(item).trim()).filter(Boolean))].slice(0, max);
 }
 
-function deepRecommendations({ input, evidence, content, upstream }) {
+function deepRecommendations({ input, evidence, content, audio, upstream }) {
   const durationSec = Number(input?.durationSec) || 60;
   const isVertical = Number(input?.height) > Number(input?.width);
   const goal = content.goal || 'המטרה שלא הוגדרה';
   const audience = content.audience || 'קהל יעד לא מוגדר';
   const reportedProblem = content.problem || 'לא צוין';
+  const ai = upstream?.analysis && typeof upstream.analysis === 'object' ? upstream.analysis : {};
+  const hasAiPriority = asArray(ai.priorityFixes).length >= 3;
+  const hasAiWhy = asArray(ai.whyItFailed).length >= 2;
 
   const priority = [];
   const why = [];
@@ -267,40 +317,49 @@ function deepRecommendations({ input, evidence, content, upstream }) {
   const improve = [];
   const platformTips = [];
 
-  priority.push(...evidence.fixes);
-  priority.push(...content.fixes);
+  if (!hasAiPriority) {
+    priority.push(...evidence.fixes, ...content.fixes, ...audio.fixes);
+  }
+  if (!hasAiWhy) {
+    why.push(...evidence.notes.slice(2), ...content.notes, ...audio.notes);
+  }
 
-  why.push(...evidence.notes.slice(2));
-  why.push(...content.notes);
-
-  if (durationSec > 35) {
+  if (!hasAiPriority && durationSec > 35) {
     priority.push('קצר את הסרטון או בנה אותו בפרקים ברורים: Hook, הוכחה, ערך, CTA.');
+  }
+  if (!hasAiWhy && durationSec > 35) {
     why.push('לרילס/טיקטוק, סרטון ארוך בלי שינויי קצב חזקים נוטה לאבד צפייה לפני המסר המרכזי.');
   }
-  if (!isVertical) {
+  if (!hasAiPriority && !isVertical) {
     priority.push('חתוך ל-9:16 ושמור את הנושא המרכזי במרכז הפריים.');
   }
-  if (evidence.scores.hook <= 6) {
-    changes.push(`החלף פתיחה כללית בפתיחה שמדברת ישירות ל-${audience}: בעיה אחת, תוצאה אחת, מתח אחד.`);
-  }
-  if (evidence.scores.pacing <= 6) {
-    changes.push('חתוך dead air. כל 1-2 שניות צריך לקרות משהו: תנועה, זום, טקסט, שינוי זווית או הדגשה.');
-  }
-  if (evidence.scores.visual <= 6) {
-    changes.push('שפר תאורה קדמית, הגדל קונטרסט, והימנע מפריים חשוך/מטושטש בפתיחה.');
-  }
-  if (!content.contentBrief) {
-    changes.push('הוסף תיאור/תמלול קצר כדי שהניתוח יוכל לבדוק מסר, CTA והבטחה ולא רק מדדי וידאו.');
+  if (asArray(ai.whatToChange).length < 2) {
+    if (evidence.scores.hook <= 6) {
+      changes.push(`החלף פתיחה כללית בפתיחה שמדברת ישירות ל-${audience}: בעיה אחת, תוצאה אחת, מתח אחד.`);
+    }
+    if (evidence.scores.pacing <= 6) {
+      changes.push('חתוך dead air. כל 1-2 שניות צריך לקרות משהו: תנועה, זום, טקסט, שינוי זווית או הדגשה.');
+    }
+    if (evidence.scores.visual <= 6) {
+      changes.push('שפר תאורה קדמית, הגדל קונטרסט, והימנע מפריים חשוך/מטושטש בפתיחה.');
+    }
+    if (!content.contentBrief) {
+      changes.push('הוסף תיאור/תמלול קצר כדי שהניתוח יוכל לבדוק מסר, CTA והבטחה ולא רק מדדי וידאו.');
+    }
   }
 
-  improve.push(`בנה את הסרטון סביב מטרה אחת: ${goal}. כל משפט שלא משרת אותה יורד בעריכה.`);
-  improve.push(`בדוק שכל 3 השניות הראשונות עונות לצופה על "למה זה חשוב לי עכשיו?"`);
-  improve.push('הוסף הוכחה אחת: מספר, צילום תוצאה, before/after, או דוגמה אמיתית.');
-  improve.push('סיים עם CTA אחד בלבד, לא רשימת בקשות.');
+  if (asArray(ai.howToImprove).length < 2) {
+    improve.push(`בנה את הסרטון סביב מטרה אחת: ${goal}. כל משפט שלא משרת אותה יורד בעריכה.`);
+    improve.push('בדוק שכל 3 השניות הראשונות עונות לצופה על "למה זה חשוב לי עכשיו?"');
+    improve.push('הוסף הוכחה אחת: מספר, צילום תוצאה, before/after, או דוגמה אמיתית.');
+    improve.push('סיים עם CTA אחד בלבד, לא רשימת בקשות.');
+  }
 
-  platformTips.push('TikTok/Reels מענישים פתיחה איטית: הבעיה או התוצאה חייבות להופיע בפריים הראשון.');
-  platformTips.push('שמור טקסט מרכזי באזור בטוח: לא צמוד לתחתית ולא מכוסה בכפתורי האפליקציה.');
-  platformTips.push('אם יש דיבור, הוסף כתוביות גדולות עם 4-7 מילים בכל רגע.');
+  if (asArray(ai.platformTips).length < 2) {
+    platformTips.push('TikTok/Reels מענישים פתיחה איטית: הבעיה או התוצאה חייבות להופיע בפריים הראשון.');
+    platformTips.push('שמור טקסט מרכזי באזור בטוח: לא צמוד לתחתית ולא מכוסה בכפתורי האפליקציה.');
+    platformTips.push('אם יש דיבור, הוסף כתוביות גדולות עם 4-7 מילים בכל רגע.');
+  }
 
   const aiHook = asText(upstream?.analysis?.hookSuggestion);
   const aiScript = asText(upstream?.analysis?.scriptSuggestion);
@@ -346,7 +405,9 @@ function buildCategories(score, sourceCategories) {
 function normalizeUpstream(data, input) {
   const evidence = visualEvidence(input);
   const content = contentEvidence(input);
-  const recommendations = deepRecommendations({ input, evidence, content, upstream: data });
+  const audio = audioEvidence(input);
+  const hasVision = Array.isArray(input?.frameImages) && input.frameImages.length > 0;
+  const recommendations = deepRecommendations({ input, evidence, content, audio, upstream: data });
   const aiAnalysis = data?.analysis && typeof data.analysis === 'object' ? data.analysis : {};
   const aiScore = clampScore(aiAnalysis.score ?? data?.SCORE);
   const categories = aiAnalysis.categories && typeof aiAnalysis.categories === 'object'
@@ -360,51 +421,56 @@ function normalizeUpstream(data, input) {
   const platformNoteMeasured = Number(input?.height) > Number(input?.width)
     ? 'הפורמט אנכי ומתאים יותר לרילס/טיקטוק.'
     : 'הפורמט אינו אנכי, וזה פוגע בהתאמה לפלטפורמות קצרות.';
+  const scoreOpts = { hasVision, measuredWeight: hasVision ? 0.3 : 0.55 };
 
   const mergedCategories = {
     ...categories,
     hook: {
       ...categories.hook,
-      score: blendScore(evidence.scores.hook, categories.hook?.score, 0.55),
-      note: mergeNote(hookNoteMeasured, categories.hook?.note, 'בדוק שהפתיחה עוצרת גלילה תוך 3 שניות.'),
+      score: pickScore(evidence.scores.hook, categories.hook?.score, categories.hook?.note, scoreOpts),
+      note: pickNote(hookNoteMeasured, categories.hook?.note, 'בדוק שהפתיחה עוצרת גלילה תוך 3 שניות.', hasVision),
     },
     pacing: {
       ...categories.pacing,
-      score: blendScore(evidence.scores.pacing, categories.pacing?.score, 0.6),
-      note: mergeNote(
-        evidence.hasFrames ? 'הקצב נמדד לפי שינויי סצנה בין פריימים שנדגמו מהסרטון.' : '',
+      score: pickScore(evidence.scores.pacing, categories.pacing?.score, categories.pacing?.note, scoreOpts),
+      note: pickNote(
+        evidence.hasFrames ? 'הקצב נמדד לפי שינויי סצנה בין פריימים.' : '',
         categories.pacing?.note,
         'שמור על שינוי ויזואלי כל 1-2 שניות.',
+        hasVision,
       ),
     },
     visual: {
       ...categories.visual,
-      score: blendScore(evidence.scores.visual, categories.visual?.score, 0.65),
-      note: mergeNote(visualNoteMeasured, categories.visual?.note, 'שפר תאורה, חדות וקונטרסט.'),
+      score: pickScore(evidence.scores.visual, categories.visual?.score, categories.visual?.note, { ...scoreOpts, measuredWeight: hasVision ? 0.25 : 0.6 }),
+      note: pickNote(visualNoteMeasured, categories.visual?.note, 'שפר תאורה, חדות וקונטרסט.', hasVision),
     },
     message: {
       ...categories.message,
-      score: blendScore(content.scores.message, categories.message?.score, 0.5),
-      note: mergeNote(content.contentBrief ? 'נבדק לפי תיאור התוכן שסופק.' : '', categories.message?.note, 'חדד הבטחה ו-CTA אחד.'),
+      score: pickScore(content.scores.message, categories.message?.score, categories.message?.note, { measuredWeight: 0.4 }),
+      note: pickNote(content.contentBrief ? 'נבדק לפי תיאור התוכן.' : '', categories.message?.note, 'חדד הבטחה ו-CTA אחד.', asText(categories.message?.note).length > 28),
     },
     audio: {
       ...categories.audio,
-      score: blendScore(content.scores.audio, categories.audio?.score, 0.35),
-      note: mergeNote('', categories.audio?.note, 'ודא שיש מוזיקה/דיבור ברור וכתוביות.'),
+      score: pickScore(audio.score, categories.audio?.score, categories.audio?.note, { measuredWeight: input?.audioMetrics?.analyzed ? 0.55 : 0.35 }),
+      note: pickNote(audio.notes[0], categories.audio?.note, 'ודא שיש מוזיקה/דיבור ברור וכתוביות.', asText(categories.audio?.note).length > 28),
     },
     platformFit: {
       ...categories.platformFit,
-      score: blendScore(evidence.scores.platformFit, categories.platformFit?.score, 0.55),
-      note: mergeNote(platformNoteMeasured, categories.platformFit?.note, 'התאם לפורמט ולאורך של TikTok/Reels.'),
+      score: pickScore(evidence.scores.platformFit, categories.platformFit?.score, categories.platformFit?.note, scoreOpts),
+      note: pickNote(platformNoteMeasured, categories.platformFit?.note, 'התאם לפורמט ולאורך של TikTok/Reels.', hasVision),
     },
   };
 
   const categoryScores = Object.values(mergedCategories).map((cat) => cat.score);
-  const overallScore = Math.round(categoryScores.reduce((sum, s) => sum + s, 0) / categoryScores.length);
+  const overallScore = hasVision && aiScore
+    ? Math.round((aiScore + categoryScores.reduce((sum, s) => sum + s, 0)) / (categoryScores.length + 1))
+    : Math.round(categoryScores.reduce((sum, s) => sum + s, 0) / categoryScores.length);
   const aiSummary = asText(aiAnalysis.summary);
+  const digestFindings = Array.isArray(input?.analysisDigest?.findings) ? input.analysisDigest.findings : [];
   const priorityFixes = recommendations.priority.slice(0, 5);
   const aiTimeline = normalizeTimeline(aiAnalysis.timeline);
-  const timeline = aiTimeline.length ? aiTimeline : evidence.timeline;
+  const timeline = aiTimeline.length >= 3 ? aiTimeline : (evidence.timeline.length ? evidence.timeline : aiTimeline);
 
   return {
     demo: false,
@@ -425,16 +491,13 @@ function normalizeUpstream(data, input) {
       score: overallScore,
       verdict: asText(aiAnalysis.verdict, 'הניתוח הושלם.'),
       summary: [
-        evidence.hasFrames
+        aiSummary || (evidence.hasFrames
           ? `${evidence.notes[0]} ${evidence.notes[1]}`
-          : 'לא התקבלו דגימות פריימים — הניתוח הוויזואלי מוגבל.',
-        Array.isArray(input?.frameImages) && input.frameImages.length
-          ? `נשלחו ${input.frameImages.length} פריימים לניתוח Vision.`
-          : '',
-        aiSummary || (content.hasContext
-          ? 'הניתוח משלב את המטרה/קהל/תיאור שסופקו.'
-          : 'הוסף תיאור תוכן לניתוח מסר מדויק יותר.'),
-        `עדיפות ראשונה: ${priorityFixes[0] || 'חזק Hook, קצב ו-CTA.'}`,
+          : 'לא התקבלו דגימות פריימים — הניתוח הוויזואלי מוגבל.'),
+        hasVision ? `נותחו ${input.frameImages.length} פריימים ב-Vision.` : '',
+        input?.audioMetrics?.analyzed ? 'נותח גם מסלול האודיו מהקובץ.' : '',
+        digestFindings.length ? `ממצאים: ${digestFindings.slice(0, 2).join(' · ')}` : '',
+        !content.contentBrief ? 'טיפ: מילוי תיאור התוכן משפר משמעותית את דיוק ניתוח המסר.' : '',
       ].filter(Boolean).join(' '),
       categories: mergedCategories,
       priorityFixes,

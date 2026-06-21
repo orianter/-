@@ -19,15 +19,22 @@ const PLATFORMS = [
 const STEPS = [
   { label: 'קורא פרטי סרטון', icon: '📤' },
   { label: 'דוגם פריימים', icon: '🎞️' },
-  { label: 'מכין תמונות Vision', icon: '👁️' },
-  { label: 'שולח ל-AI', icon: '💬' },
-  { label: 'מנתח מקצועי', icon: '🧠' },
+  { label: 'מנתח אודיו', icon: '🎧' },
+  { label: 'מכין Vision', icon: '👁️' },
+  { label: 'מנתח AI', icon: '🧠' },
   { label: 'מכין דוח', icon: '📋' },
 ];
 
 const MAX_FILE_MB = 100;
-const FRAME_SAMPLE_SIZE = 160;
-const VISION_FRAME_SIZE = 512;
+const FRAME_SAMPLE_SIZE = 180;
+const VISION_FRAME_SIZE = 640;
+const VISION_FRAME_SIZE_HOOK = 768;
+
+function average(items, key) {
+  const values = items.map((item) => Number(item[key])).filter(Number.isFinite);
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
 
 function frameTimestamps(durationSec) {
   const duration = Math.min(Math.max(Number(durationSec) || 0, 0), 60);
@@ -50,10 +57,23 @@ function frameTimestamps(durationSec) {
 
 function visionFrameTimestamps(durationSec) {
   const duration = Math.min(Math.max(Number(durationSec) || 0, 0), 60);
-  const points = [0.5, 3];
-  if (duration > 12) points.push(Math.round(duration * 0.5 * 10) / 10);
-  if (duration > 20) points.push(Math.max(1, duration - 2));
-  return [...new Set(points.filter((p) => p > 0 && p < duration))].slice(0, 4);
+  const points = [0.3, 1, 3];
+  if (duration > 10) points.push(Math.round(duration * 0.45 * 10) / 10);
+  if (duration > 6) points.push(Math.max(1, duration - 1.5));
+  return [...new Set(points.filter((p) => p > 0 && p < duration))].slice(0, 5);
+}
+
+function allSampleTimestamps(durationSec) {
+  return [...new Set([...frameTimestamps(durationSec), ...visionFrameTimestamps(durationSec)])]
+    .sort((a, b) => a - b)
+    .slice(0, 18);
+}
+
+function visionLabel(second, durationSec) {
+  if (second <= 1) return 'פריים ראשון — Hook';
+  if (second <= 3) return '3 שניות ראשונות — Hook';
+  if (second >= (durationSec || 60) * 0.65) return 'סיום — CTA';
+  return 'אמצע הסרטון';
 }
 
 function computeFrameMetrics(imageData, previousData) {
@@ -118,13 +138,113 @@ function drawScaledFrame(video, canvas, ctx, targetSize) {
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 }
 
-function canvasToJpegBase64(canvas, quality = 0.62) {
+function canvasToJpegBase64(canvas, quality = 0.68) {
   const dataUrl = canvas.toDataURL('image/jpeg', quality);
   return dataUrl.includes(',') ? dataUrl.split(',')[1] : '';
 }
 
+async function analyzeAudio(file, durationSec) {
+  const maxSec = Math.min(Number(durationSec) || 60, 60);
+  try {
+    const buffer = await file.arrayBuffer();
+    const ctx = new AudioContext();
+    const audioBuffer = await Promise.race([
+      ctx.decodeAudioData(buffer.slice(0)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 12000)),
+    ]);
+    await ctx.close();
+
+    const channel = audioBuffer.getChannelData(0);
+    const sampleRate = audioBuffer.sampleRate;
+    const windowSec = 0.5;
+    const windowSize = Math.floor(sampleRate * windowSec);
+    const windows = [];
+
+    for (let start = 0; start < channel.length; start += windowSize) {
+      const end = Math.min(start + windowSize, channel.length);
+      let sumSq = 0;
+      for (let i = start; i < end; i += 1) sumSq += channel[i] * channel[i];
+      const rms = Math.sqrt(sumSq / Math.max(1, end - start));
+      windows.push({
+        second: Math.round((start / sampleRate) * 10) / 10,
+        rms: Math.round(rms * 1000) / 1000,
+      });
+      if (start / sampleRate > maxSec) break;
+    }
+
+    if (!windows.length) return { analyzed: false };
+
+    const hookWindows = windows.filter((w) => w.second <= 3);
+    const avgRms = average(windows, 'rms') ?? 0;
+    const hookRms = average(hookWindows, 'rms') ?? avgRms;
+    const silentThreshold = 0.012;
+    const silentRatio = Math.round((windows.filter((w) => w.rms < silentThreshold).length / windows.length) * 100);
+    const hookSilentRatio = hookWindows.length
+      ? Math.round((hookWindows.filter((w) => w.rms < silentThreshold).length / hookWindows.length) * 100)
+      : 0;
+    const loudest = windows.reduce((best, w) => (w.rms > best.rms ? w : best), windows[0]);
+
+    return {
+      analyzed: true,
+      hasAudio: avgRms >= silentThreshold,
+      avgVolume: Math.round(avgRms * 1000) / 1000,
+      hookVolume: Math.round(hookRms * 1000) / 1000,
+      silentRatio,
+      hookSilentRatio,
+      loudestAtSec: loudest.second,
+      openingWeak: hookRms < avgRms * 0.6,
+      mostlySilent: silentRatio > 45,
+    };
+  } catch {
+    return { analyzed: false };
+  }
+}
+
+function buildAnalysisDigest(frameMetrics, videoMeta, audioMetrics) {
+  const width = Number(videoMeta?.width);
+  const height = Number(videoMeta?.height);
+  const durationSec = Number(videoMeta?.durationSec) || 60;
+  const ratio = width && height ? height / width : null;
+  const near916 = ratio ? Math.abs(ratio - 16 / 9) < 0.12 : null;
+  const hookFrames = frameMetrics.filter((f) => Number(f.second) <= 3);
+  const hookChange = average(hookFrames.slice(1), 'sceneChange');
+  const hookSharpness = average(hookFrames, 'sharpness');
+  const avgChange = average(frameMetrics.slice(1), 'sceneChange');
+  const findings = [];
+
+  if (ratio !== null) {
+    findings.push(height > width
+      ? (near916 ? 'פורמט אנכי 9:16 — מתאים לרילס/טיקטוק' : `פורמט אנכי (${width}×${height}) — לא בדיוק 9:16`)
+      : `פורמט לא אנכי (${width}×${height}) — פוגע בפיד`);
+  }
+  if (durationSec > 35) findings.push(`אורך ${durationSec.toFixed(0)} שניות — ארוך יחסית לרילס`);
+  if (hookChange !== null && hookChange < 7) findings.push('ב-Hook (0-3 שנ\') יש מעט שינוי ויזואלי');
+  if (hookSharpness !== null && hookSharpness < 10) findings.push('הפתיחה נראית רכה/מטושטשת במדידה');
+  if (avgChange !== null && avgChange < 6) findings.push('קצב ויזואלי איטי לאורך הסרטון');
+  if (audioMetrics?.analyzed) {
+    if (!audioMetrics.hasAudio) findings.push('כמעט אין אודיו מזוהה');
+    else if (audioMetrics.openingWeak) findings.push('עוצמת האודיו בפתיחה חלשה יחסית לשאר הסרטון');
+    else if (audioMetrics.hookSilentRatio > 50) findings.push('יש שקט משמעותי ב-3 השניות הראשונות');
+  }
+
+  return {
+    frameCount: frameMetrics.length,
+    durationSec,
+    aspectRatio: ratio ? Number(ratio.toFixed(2)) : null,
+    isVertical916: near916 === true,
+    hookSceneChange: hookChange !== null ? Math.round(hookChange) : null,
+    avgSceneChange: avgChange !== null ? Math.round(avgChange) : null,
+    audio: audioMetrics?.analyzed ? {
+      hasAudio: audioMetrics.hasAudio,
+      hookSilentRatio: audioMetrics.hookSilentRatio,
+      openingWeak: audioMetrics.openingWeak,
+    } : null,
+    findings,
+  };
+}
+
 async function sampleVideoFrames(file, durationSec) {
-  const timestamps = frameTimestamps(durationSec);
+  const timestamps = allSampleTimestamps(durationSec);
   const visionTimes = visionFrameTimestamps(durationSec);
   if (!timestamps.length) return { frameMetrics: [], frameImages: [] };
 
@@ -137,7 +257,7 @@ async function sampleVideoFrames(file, durationSec) {
     const visionCtx = visionCanvas.getContext('2d');
     const samples = [];
     const frameImages = [];
-    const visionSet = new Set(visionTimes.map((t) => Math.round(t * 10) / 10));
+    const visionTargets = visionTimes.map((t) => Math.round(t * 10) / 10);
     let previousData = null;
     let index = 0;
     let finished = false;
@@ -155,6 +275,22 @@ async function sampleVideoFrames(file, durationSec) {
       return;
     }
 
+    const captureVision = (second) => {
+      if (!visionCtx) return;
+      const isHook = second <= 1;
+      const size = isHook ? VISION_FRAME_SIZE_HOOK : VISION_FRAME_SIZE;
+      drawScaledFrame(video, visionCanvas, visionCtx, size);
+      const base64 = canvasToJpegBase64(visionCanvas, isHook ? 0.75 : 0.68);
+      if (base64) {
+        frameImages.push({
+          second,
+          label: visionLabel(second, durationSec),
+          isHook,
+          base64,
+        });
+      }
+    };
+
     const captureCurrentFrame = () => {
       const second = Math.round(timestamps[index] * 10) / 10;
       drawScaledFrame(video, canvas, ctx, FRAME_SAMPLE_SIZE);
@@ -165,13 +301,10 @@ async function sampleVideoFrames(file, durationSec) {
       });
       previousData = imageData;
 
-      if (visionCtx && visionSet.has(second)) {
-        drawScaledFrame(video, visionCanvas, visionCtx, VISION_FRAME_SIZE);
-        const base64 = canvasToJpegBase64(visionCanvas);
-        if (base64) {
-          const label = second <= 3 ? 'פתיחה (Hook)' : second >= (durationSec || 60) * 0.7 ? 'סיום/CTA' : 'אמצע';
-          frameImages.push({ second, label, base64 });
-        }
+      const visionIdx = visionTargets.indexOf(second);
+      if (visionIdx !== -1) {
+        captureVision(second);
+        visionTargets.splice(visionIdx, 1);
       }
 
       index += 1;
@@ -180,20 +313,35 @@ async function sampleVideoFrames(file, durationSec) {
 
     const seekNextFrame = () => {
       if (index >= timestamps.length) {
+        if (visionTargets.length && visionCtx) {
+          captureAtVisionOnly(0);
+          return;
+        }
         finish();
         return;
       }
       video.currentTime = timestamps[index];
     };
 
-    timer = setTimeout(finish, 15000);
+    const captureAtVisionOnly = (visionIndex) => {
+      if (visionIndex >= visionTargets.length) {
+        finish();
+        return;
+      }
+      video.onseeked = () => {
+        captureVision(visionTargets[visionIndex]);
+        captureAtVisionOnly(visionIndex + 1);
+      };
+      video.currentTime = visionTargets[visionIndex];
+    };
+
+    timer = setTimeout(finish, 20000);
     video.muted = true;
     video.playsInline = true;
     video.preload = 'auto';
     video.onloadedmetadata = seekNextFrame;
     video.onseeked = captureCurrentFrame;
     video.onerror = finish;
-    video.onended = finish;
     video.src = url;
   });
 }
@@ -319,6 +467,8 @@ export default function AnalyzePage() {
         throw new Error('הסרטון ארוך מדי. המקסימום הוא דקה אחת.');
       }
       const { frameMetrics, frameImages } = await sampleVideoFrames(file, videoMeta.durationSec);
+      const audioMetrics = await analyzeAudio(file, videoMeta.durationSec);
+      const analysisDigest = buildAnalysisDigest(frameMetrics, videoMeta, audioMetrics);
       const res = await fetch(analyzeFunctionUrl(), {
         method: 'POST',
         headers: supabaseHeaders({ 'Content-Type': 'application/json' }),
@@ -334,6 +484,8 @@ export default function AnalyzePage() {
           ...videoMeta,
           frameMetrics,
           frameImages,
+          audioMetrics,
+          analysisDigest,
         }),
       });
       const data = await res.json();
@@ -538,10 +690,10 @@ export default function AnalyzePage() {
             </label>
 
             <label>
-              מה קורה / נאמר בסרטון? <span className="label-hint">(משפר מאוד את הניתוח)</span>
+              מה קורה / נאמר בסרטון? <span className="label-hint">(חובה לדיוק מקסימלי)</span>
               <textarea
-                rows={3}
-                placeholder="לדוגמה: אני מציג מוצר, אומר 'אם העסק שלך תקוע...', יש טקסט על המסך..."
+                rows={4}
+                placeholder="ככל שתפרט יותר — הניתוח יהיה מדויק יותר. לדוגמה: '0-2 שנ: אני מסתכל למצלמה ואומר...', 'יש טקסט על המסך: ...', 'בסוף: כתוב לי X'"
                 value={contentBrief}
                 onChange={(e) => setContentBrief(e.target.value)}
               />
@@ -559,7 +711,7 @@ export default function AnalyzePage() {
           </button>
 
           <p className="analyze-disclaimer">
-            הסרטון המלא לא נשלח לשרת · נשלחים מדדי פריימים + עד 4 תמונות מפתח לניתוח Vision
+            הסרטון המלא לא נשלח · נשלחים מדדי פריימים, ניתוח אודיו, ועד 5 תמונות מפתח ל-Vision
           </p>
         </div>
       )}

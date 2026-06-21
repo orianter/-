@@ -160,6 +160,40 @@ function formatFrameMetrics(frames: unknown) {
   return lines.join('\n') + summary;
 }
 
+function formatAudioMetrics(audio: unknown) {
+  const a = audio && typeof audio === 'object' ? audio as Record<string, unknown> : null;
+  if (!a?.analyzed) return 'לא ניתן לנתח אודיו מהקובץ — אל תניח מה נאמר, רק המלץ מה לבדוק.';
+
+  const lines = [
+    `- יש אודיו: ${a.hasAudio ? 'כן' : 'כמעט לא / שקט'}`,
+    `- עוצמה ממוצעת: ${Number(a.avgVolume) || 0}`,
+    `- עוצמה ב-3 שניות ראשונות: ${Number(a.hookVolume) || 0}`,
+    `- אחוז חלונות שקטים: ${Number(a.silentRatio) || 0}%`,
+    `- שקט בפתיחה (0-3 שנ'): ${Number(a.hookSilentRatio) || 0}%`,
+  ];
+  if (a.openingWeak) lines.push('- ⚠️ האודיו בפתיחה חלש יותר מהממוצע — עלול לפגוע ב-Hook');
+  if (a.mostlySilent) lines.push('- ⚠️ הסרטון שקט לרוב — ודא שיש מוזיקה/דיבור/כתוביות');
+  if (Number.isFinite(Number(a.loudestAtSec))) lines.push(`- השיא בעוצמה סביב ${Number(a.loudestAtSec)} שניות`);
+  return lines.join('\n');
+}
+
+function formatAnalysisDigest(digest: unknown) {
+  const d = digest && typeof digest === 'object' ? digest as Record<string, unknown> : null;
+  if (!d) return '';
+
+  const findings = Array.isArray(d.findings)
+    ? d.findings.filter((item) => typeof item === 'string' && item.trim()).join('\n- ')
+    : '';
+
+  return [
+    `דגימות: ${Number(d.frameCount) || 0} פריימים · אורך ${Number(d.durationSec) || '?'} שנ'`,
+    d.aspectRatio ? `יחס גובה/רוחב: ${d.aspectRatio}${d.isVertical916 ? ' (9:16 ✓)' : ''}` : '',
+    d.hookSceneChange !== null && d.hookSceneChange !== undefined ? `שינוי ויזואלי ב-Hook: ${d.hookSceneChange}%` : '',
+    d.avgSceneChange !== null && d.avgSceneChange !== undefined ? `שינוי ויזואלי ממוצע: ${d.avgSceneChange}%` : '',
+    findings ? `ממצאים מחושבים מראש:\n- ${findings}` : '',
+  ].filter(Boolean).join('\n');
+}
+
 function normalizeFrameImages(images: unknown) {
   if (!Array.isArray(images)) return [];
   return images
@@ -167,15 +201,16 @@ function normalizeFrameImages(images: unknown) {
     .map((item) => {
       const img = item as Record<string, unknown>;
       const base64 = asText(img.base64);
-      if (!base64 || base64.length > 120_000) return null;
+      if (!base64 || base64.length > 200_000) return null;
       return {
         second: Number(img.second) || 0,
         label: asText(img.label, 'פריים'),
+        isHook: Boolean(img.isHook) || Number(img.second) <= 1,
         base64,
       };
     })
     .filter(Boolean)
-    .slice(0, 4) as Array<{ second: number; label: string; base64: string }>;
+    .slice(0, 5) as Array<{ second: number; label: string; isHook: boolean; base64: string }>;
 }
 
 function buildPrompt(input: Record<string, unknown>, hasVision: boolean) {
@@ -193,9 +228,17 @@ function buildPrompt(input: Record<string, unknown>, hasVision: boolean) {
   const height = Number(input.height);
   const isVertical = Number.isFinite(width) && Number.isFinite(height) ? height > width : null;
   const frameBlock = formatFrameMetrics(input.frameMetrics);
+  const audioBlock = formatAudioMetrics(input.audioMetrics);
+  const digestBlock = formatAnalysisDigest(input.analysisDigest);
 
   return `אתה אנליסט בכיר לתוכן ויראלי קצר (${platformLabel}) עם ניסיון של אלפי רילסים.
-תפקידך: ניתוח מקצועי, ספציפי ופרקטי — לא משפטים גנריים.
+תפקידך: ניתוח מדויק, ספציפי ופרקטי — לא משפטים גנריים.
+
+## כללי דיוק (חובה)
+- התבסס רק על הנתונים, הפריימים והתיאור שקיבלת
+- ציין שניות ספציפיות כשאתה מתייחס לבעיה
+- אל תמציא תמלול או טקסט — אלא אם רואים בפריים או כתוב ב-contentBrief
+- אם חסר מידע — כתוב "לא ניתן לבדוק X"
 
 ## מה יש לך
 ${hasVision
@@ -216,15 +259,21 @@ ${hasVision
 - אורך: ${Number.isFinite(durationSec) ? durationSec.toFixed(1) + ' שניות' : 'לא זוהה'}
 - מידות: ${Number.isFinite(width) && Number.isFinite(height) ? `${width}×${height}` : 'לא זוהה'}${isVertical === true ? ' (אנכי ✓)' : isVertical === false ? ' (לא אנכי — בעיה לרילס/טיקטוק)' : ''}
 
-## מדדי פריימים אמיתיים (נדגמו מהסרטון)
+## סיכום מדידה אוטומטי
+${digestBlock || 'לא התקבל.'}
+
+## מדדי פריימים
 ${frameBlock}
+
+## מדדי אודיו
+${audioBlock}
 
 ## כללי ניתוח
 1. Hook (0-3 שנ'): האם יש מתח, הבטחה, שאלה, או ניגוד? האם יש שינוי ויזואלי מספיק לפי המדדים?
 2. קצב: לפי שינויי סצנה בין פריימים — האם הסרטון סטטי מדי?
 3. מסר: לפי contentBrief — האם יש הבטחה ברורה, ערך, ו-CTA אחד?
 4. ויזואל: בהירות, חדות, קונטרסט, פורמט אנכי
-5. אודיו: אם אין מידע — ציין מה לבדוק (מוזיקה, כתוביות, עוצמת דיבור) בלי להמציא
+5. אודיו: לפי מדדי האודיו — שקט/חלש בפתיחה = בעיה
 6. התאמה לפלטפורמה: ${platformLabel} — hook מהיר, טקסט בטוח, אורך אידיאלי
 
 ## פלט נדרש
@@ -282,7 +331,10 @@ function buildMessages(input: Record<string, unknown>) {
       },
       {
         type: 'image_url',
-        image_url: { url: `data:image/jpeg;base64,${img.base64}`, detail: 'low' },
+        image_url: {
+          url: `data:image/jpeg;base64,${img.base64}`,
+          detail: img.isHook ? 'high' : 'low',
+        },
       },
     ]),
   ];
@@ -333,7 +385,8 @@ serve(async (req) => {
     }
 
     const frameImages = normalizeFrameImages(input.frameImages);
-    const model = frameImages.length > 0 ? 'gpt-4o' : 'gpt-4o-mini';
+    const hasRichInput = frameImages.length > 0 || Array.isArray(input.frameMetrics) && input.frameMetrics.length > 0;
+    const model = frameImages.length > 0 ? 'gpt-4o' : hasRichInput ? 'gpt-4o-mini' : 'gpt-4o-mini';
 
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -345,8 +398,8 @@ serve(async (req) => {
         model,
         response_format: { type: 'json_object' },
         messages: buildMessages(input),
-        max_tokens: 4000,
-        temperature: 0.35,
+        max_tokens: 4500,
+        temperature: 0.2,
       }),
     });
 
