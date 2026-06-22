@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { DemoReportPreview } from '../components/DemoReport';
 import { FAQ } from '../components/FAQ';
 import { Pricing } from '../components/Pricing';
@@ -9,7 +9,14 @@ import { CheckoutModal } from '../components/CheckoutModal';
 import { HomeStickyCta } from '../components/HomeStickyCta';
 import { PaywallBanner } from '../components/PaywallBanner';
 import { COMPARISON, TESTIMONIALS, TRUST_STATS } from '../data/content';
-import { hasUsedFreeAnalysis } from '../lib/usageLocal';
+import { analyzeHeaders } from '../api';
+import {
+  canRunFullAnalysis,
+  fetchAnalysisAccess,
+  hasUsedFreeAnalysis,
+  setPaymentSuccessNotice,
+  syncFreeAnalysisFromApi,
+} from '../lib/usageLocal';
 import { isPaywallLanding } from '../lib/paywallMode';
 
 const STEPS = [
@@ -25,9 +32,28 @@ const AUDIENCE = [
 ];
 
 export default function HomePage() {
+  const navigate = useNavigate();
   const [checkout, setCheckout] = useState(null);
+  const [analysisAccess, setAnalysisAccess] = useState(null);
+  const [paymentBanner, setPaymentBanner] = useState(null);
   const paywall = isPaywallLanding();
-  const freeUsed = hasUsedFreeAnalysis();
+  const analysisCredits = analysisAccess?.analysisCredits || 0;
+  const freeUsed = hasUsedFreeAnalysis() && !canRunFullAnalysis(analysisAccess);
+  const hasCredits = canRunFullAnalysis(analysisAccess);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAnalysisAccess()
+      .then((data) => {
+        if (cancelled) return;
+        setAnalysisAccess(data);
+        syncFreeAnalysisFromApi(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -40,9 +66,85 @@ export default function HomePage() {
     return undefined;
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('payment') !== 'success') return undefined;
+
+    const orderId = params.get('order')?.trim() || '';
+    let cancelled = false;
+    let attempts = 0;
+
+    const poll = async () => {
+      if (cancelled) return;
+      attempts += 1;
+      try {
+        const headers = await analyzeHeaders();
+        const query = orderId ? `?order=${encodeURIComponent(orderId)}` : '';
+        const res = await fetch(`/api/payment/status${query}`, {
+          headers,
+          credentials: 'include',
+        });
+        const data = await res.json();
+        if (cancelled) return;
+
+        if (data.status === 'paid' || (data.analysisCredits || 0) > 0) {
+          setPaymentBanner({
+            credits: data.analysisCredits || data.creditsGranted || 0,
+            granted: data.creditsGranted,
+          });
+          setAnalysisAccess((prev) => ({
+            ...(prev || {}),
+            analysisCredits: data.analysisCredits || 0,
+            canAnalyzeFull: (data.analysisCredits || 0) > 0,
+            freeRemaining: 0,
+          }));
+          syncFreeAnalysisFromApi({
+            analysisCredits: data.analysisCredits || 0,
+            freeRemaining: 0,
+          });
+          window.history.replaceState({}, '', '/');
+          setPaymentSuccessNotice(data.analysisCredits || data.creditsGranted || 0);
+          setTimeout(() => {
+            if (!cancelled) navigate('/analyze');
+          }, 2500);
+          return;
+        }
+      } catch {
+        /* retry */
+      }
+
+      if (attempts < 8 && !cancelled) {
+        setTimeout(poll, 2000);
+      }
+    };
+
+    poll();
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate]);
+
   return (
     <div className={`landing ${paywall ? 'landing--paywall' : ''}`}>
       {paywall && <PaywallBanner />}
+
+      {paymentBanner && (
+        <div className="analyze-alert analyze-alert--ok landing__payment-banner" role="status">
+          <strong>✓ התשלום הושלם!</strong>
+          {' '}
+          {paymentBanner.credits
+            ? `נוספו ${paymentBanner.credits} ניתוחים מלאים — מעבירים אותך לניתוח…`
+            : 'מעבירים אותך לניתוח…'}
+        </div>
+      )}
+
+      {hasCredits && !paymentBanner && (
+        <div className="analyze-alert analyze-alert--ok landing__payment-banner" role="status">
+          <strong>✓ יש לך {analysisCredits} ניתוחים מלאים</strong>
+          {' '}
+          <Link to="/analyze">התחל ניתוח ←</Link>
+        </div>
+      )}
 
       <section className="hero">
         <div className="hero__glow" />
@@ -211,7 +313,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <Pricing onCheckout={setCheckout} />
+      <Pricing onCheckout={setCheckout} analysisCredits={analysisCredits} />
       <section id="ai-disclaimer" className="ai-disclaimer-section">
         <div className="section-wrap section-wrap--narrow">
           <AiDisclaimer />
@@ -243,7 +345,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <HomeStickyCta />
+      <HomeStickyCta analysisCredits={analysisCredits} />
       <CheckoutModal state={checkout} onClose={() => setCheckout(null)} />
     </div>
   );

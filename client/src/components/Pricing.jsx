@@ -8,9 +8,9 @@ import { getPlanCta, startCheckout } from '../lib/planCheckout';
 import { isPaywallLanding } from '../lib/paywallMode';
 import { hasUsedFreeAnalysis } from '../lib/usageLocal';
 
-export function Pricing({ onCheckout }) {
+export function Pricing({ onCheckout, analysisCredits = 0 }) {
   const paywall = isPaywallLanding();
-  const freeUsed = hasUsedFreeAnalysis();
+  const freeUsed = hasUsedFreeAnalysis() && analysisCredits <= 0;
   const [billing, setBilling] = useState(() => {
     if (paywall && getIntroOffer()?.active) return 'monthly';
     if (paywall) return 'monthly';
@@ -36,7 +36,7 @@ export function Pricing({ onCheckout }) {
   });
 
   const handlePlanClick = (plan) => {
-    const cta = getPlanCta(plan, { freeUsed, paywall, introOffer: offer });
+    const cta = getPlanCta(plan, { freeUsed, paywall, introOffer: offer, analysisCredits });
     if (cta.type === 'checkout') {
       startCheckout(plan.id, { introOffer: offer, openModal: onCheckout });
     }
@@ -83,7 +83,7 @@ export function Pricing({ onCheckout }) {
               ? getDiscountedPrice(plan.price, offer.discountPercent)
               : plan.price;
             const showStrikethrough = hasIntroDiscount || plan.originalPrice;
-            const cta = getPlanCta(plan, { freeUsed, paywall, introOffer: offer });
+            const cta = getPlanCta(plan, { freeUsed, paywall, introOffer: offer, analysisCredits });
             const isHighlighted =
               (paywall || offer?.active) && plan.id === 'monthly' && billing === 'monthly';
             const isAnnualFeatured = billing === 'annual' && plan.billing === 'annual' && plan.popular;

@@ -12,6 +12,15 @@
     },
     "api/video-proxy.js": {
       "maxDuration": 60
+    },
+    "api/payment/create.js": {
+      "maxDuration": 30
+    },
+    "api/payment/status.js": {
+      "maxDuration": 30
+    },
+    "api/payment/webhook.js": {
+      "maxDuration": 30
     }
   },
   "rewrites": [

@@ -1,13 +1,30 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { hasUsedFreeAnalysis } from '../lib/usageLocal';
+import { canRunFullAnalysis, fetchAnalysisAccess, hasUsedFreeAnalysis } from '../lib/usageLocal';
 import './Layout.css';
 
 export function Navbar() {
   const { pathname } = useLocation();
   const onAnalyze = pathname === '/analyze';
   const [menuOpen, setMenuOpen] = useState(false);
-  const freeUsed = hasUsedFreeAnalysis();
+  const [analysisCredits, setAnalysisCredits] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAnalysisAccess()
+      .then((data) => {
+        if (!cancelled && canRunFullAnalysis(data)) {
+          setAnalysisCredits(data.analysisCredits || 0);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
+
+  const hasCredits = analysisCredits > 0;
+  const freeUsed = hasUsedFreeAnalysis() && !hasCredits;
 
   useEffect(() => {
     setMenuOpen(false);
@@ -26,10 +43,12 @@ export function Navbar() {
     </>
   );
 
-  const ctaHref = freeUsed ? '/?pricing=1#pricing' : '/analyze';
+  const ctaHref = hasCredits ? '/analyze' : freeUsed ? '/?pricing=1#pricing' : '/analyze';
   const ctaLabel = onAnalyze
     ? '← חזרה לדף הבית'
-    : freeUsed
+    : hasCredits
+      ? `נתח (${analysisCredits})`
+      : freeUsed
       ? 'שדרג עכשיו'
       : 'נתח סרטון';
 
@@ -78,7 +97,7 @@ export function Navbar() {
           ) : (
             <Link
               to={ctaHref}
-              className="navbar__cta"
+              className={`navbar__cta${hasCredits ? ' navbar__cta--credits' : ''}`}
               onClick={() => setMenuOpen(false)}
             >
               {ctaLabel}

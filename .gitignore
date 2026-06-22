@@ -10,6 +10,9 @@ client/dist/
 server/.env
 .env
 .env.local
+.env.setup
+google-oauth.json
+client_secret*.json
 *.local
 
 # Uploads

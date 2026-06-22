@@ -233,9 +233,9 @@ export const TRUST_STATS = [
   { value: '1', label: 'תצוגה מקדימה חינם' },
 ];
 
-/** Optional — leave empty for generic mailto fallback in checkout. */
+/** Operator: replace whatsapp with intl digits (e.g. 972501234567) or set email. */
 export const CONTACT = {
-  email: '',
+  email: 'support@reelanalyzer.co.il',
   whatsapp: '',
 };
 

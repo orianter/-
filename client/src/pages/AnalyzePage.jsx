@@ -29,7 +29,7 @@ import { ReportUpgradeCTA } from '../components/ReportUpgradeCTA';
 import { extractAudioForWhisper } from '../lib/audioWhisper';
 import { activateIntroOffer } from '../lib/introOffer';
 import { goToPricing } from '../lib/goToPricing';
-import { markFreeAnalysisUsed, syncFreeAnalysisFromApi, hasUsedFreeAnalysis } from '../lib/usageLocal';
+import { markFreeAnalysisUsed, syncFreeAnalysisFromApi, hasUsedFreeAnalysis, canRunFullAnalysis, getAnalysisCredits, isAnalysisBlocked, consumePaymentSuccessNotice } from '../lib/usageLocal';
 import { MAX_VIDEO_DURATION_SEC, MAX_VIDEO_DURATION_TOLERANCE } from '../lib/videoLimits';
 import {
   detectSharePlatform,
@@ -477,12 +477,21 @@ export default function AnalyzePage() {
   const [authError, setAuthError] = useState(null);
   const [verifiedEmail, setVerifiedEmail] = useState('');
   const [checkout, setCheckout] = useState(null);
+  const [paymentNotice, setPaymentNotice] = useState(null);
   const fileInputRef = useRef(null);
   const stepTimerRef = useRef(null);
 
   const applyUsageStatus = useCallback((data) => {
     setApiReady(data);
     syncFreeAnalysisFromApi(data);
+
+    if (canRunFullAnalysis(data)) {
+      setFreeBlocked(false);
+      setEmailLimitExceeded(false);
+      setRequiresEmailAuth(false);
+      return;
+    }
+
     if (data.freeRemaining === 0) {
       if (data.requiresEmailAuth) {
         setRequiresEmailAuth(true);
@@ -535,7 +544,24 @@ export default function AnalyzePage() {
   }, [applyUsageStatus]);
 
   useEffect(() => {
+    const notice = consumePaymentSuccessNotice();
+    if (notice?.credits) {
+      setPaymentNotice(notice);
+      setApiReady((prev) => ({
+        ...(prev || {}),
+        ok: true,
+        analysisCredits: notice.credits,
+        canAnalyzeFull: notice.credits > 0,
+        freeRemaining: 0,
+      }));
+      setFreeBlocked(false);
+      setEmailLimitExceeded(false);
+    }
+  }, []);
+
+  useEffect(() => {
     if (!verifiedEmail || loading || result) return;
+    if (canRunFullAnalysis(apiReady)) return;
     if (emailLimitExceeded) {
       goToPricing(navigate, { replace: true });
       return;
@@ -663,7 +689,8 @@ export default function AnalyzePage() {
         throw new Error('הסרטון ארוך מדי. המקסימום הוא 2 דקות (120 שניות).');
       }
       const isTeaserRun = Boolean(
-        apiReady?.freeRemaining === 1
+        !canRunFullAnalysis(apiReady)
+        && apiReady?.freeRemaining === 1
         && !apiReady?.demoMode
         && verifiedEmail
       );
@@ -715,10 +742,30 @@ export default function AnalyzePage() {
       setStepIndex(STEPS.length - 1);
       setResult(data);
       activateIntroOffer();
-      markFreeAnalysisUsed();
-      setApiReady((prev) => ({ ...(prev || {}), freeRemaining: 0 }));
-      setEmailLimitExceeded(true);
-      setFreeBlocked(true);
+
+      if (data.isTeaser) {
+        markFreeAnalysisUsed();
+        setApiReady((prev) => ({ ...(prev || {}), freeRemaining: 0 }));
+        setEmailLimitExceeded(true);
+        setFreeBlocked(true);
+      } else {
+        const remaining = Number.isFinite(data.analysisCredits)
+          ? data.analysisCredits
+          : Math.max(0, getAnalysisCredits(apiReady) - 1);
+        setApiReady((prev) => ({
+          ...(prev || {}),
+          analysisCredits: remaining,
+          canAnalyzeFull: remaining > 0,
+          freeRemaining: 0,
+        }));
+        syncFreeAnalysisFromApi({
+          ...(apiReady || {}),
+          analysisCredits: remaining,
+          freeRemaining: 0,
+        });
+        setEmailLimitExceeded(false);
+        setFreeBlocked(false);
+      }
       setTimeout(() => {
         document.getElementById('report')?.scrollIntoView({ behavior: 'smooth' });
       }, 300);
@@ -752,7 +799,7 @@ export default function AnalyzePage() {
   };
 
   const reset = () => {
-    if (hasUsedFreeAnalysis() || emailLimitExceeded || freeBlocked) {
+    if (!canRunFullAnalysis(apiReady) && (hasUsedFreeAnalysis() || emailLimitExceeded || freeBlocked)) {
       goToPricing(navigate);
       return;
     }
@@ -819,7 +866,22 @@ export default function AnalyzePage() {
         </p>
       </div>
 
-      {apiReady && apiReady.ok && verifiedEmail && apiReady.freeRemaining === 1 && !apiReady.demoMode && !loading && !result && (
+      {paymentNotice && (
+        <div className="analyze-alert analyze-alert--ok">
+          <strong>✓ התשלום הושלם!</strong> יש לך {paymentNotice.credits} ניתוחים מלאים — העלה סרטון והתחל.
+        </div>
+      )}
+
+      {apiReady && apiReady.ok && verifiedEmail && getAnalysisCredits(apiReady) > 0 && !loading && !result && (
+        <div className="analyze-alert analyze-alert--ok analyze-auth-status">
+          <strong>✓ {getAnalysisCredits(apiReady)} ניתוחים מלאים זמינים</strong> — העלה סרטון וקבל דוח מלא.
+          <button type="button" className="analyze-auth-status__signout" onClick={handleSignOut}>
+            התנתק
+          </button>
+        </div>
+      )}
+
+      {apiReady && apiReady.ok && verifiedEmail && apiReady.freeRemaining === 1 && getAnalysisCredits(apiReady) === 0 && !apiReady.demoMode && !loading && !result && (
         <div className="analyze-alert analyze-alert--ok analyze-auth-status">
           <strong>✓ מחובר/ת כ-{verifiedEmail}</strong> — יש לך תצוגה מקדימה אחת. העלה סרטון והתחל.
           <button type="button" className="analyze-auth-status__signout" onClick={handleSignOut}>
@@ -858,7 +920,7 @@ export default function AnalyzePage() {
         </div>
       )}
 
-      {apiReady && apiReady.ok && apiReady.freeRemaining !== 1 && !apiReady.demoMode && !loading && !result && !emailLimitExceeded && verifiedEmail && (
+      {apiReady && apiReady.ok && apiReady.freeRemaining !== 1 && getAnalysisCredits(apiReady) === 0 && !apiReady.demoMode && !loading && !result && !emailLimitExceeded && verifiedEmail && (
         <div className="analyze-alert analyze-alert--ok">
           <strong>✓ המערכת מוכנה.</strong> העלה סרטון, מלא את הפרטים — והניתוח יתחיל. זמן משוער: 30–60 שניות.
         </div>
@@ -909,7 +971,7 @@ export default function AnalyzePage() {
         </div>
       )}
 
-      {!result && !loading && verifiedEmail && !emailLimitExceeded && (
+      {!result && !loading && verifiedEmail && (!isAnalysisBlocked(apiReady) || canRunFullAnalysis(apiReady)) && (
         <div className="analyze-panel">
           <div className="url-import url-import--primary">
             <label className="url-import__label" htmlFor="video-link-input">
@@ -1147,8 +1209,7 @@ export default function AnalyzePage() {
               !file
               || linkLoading
               || !verifiedEmail
-              || emailLimitExceeded
-              || apiReady?.freeRemaining === 0
+              || isAnalysisBlocked(apiReady)
               || !apiReady
               || apiReady.unreachable
               || apiReady.missingConfig
@@ -1158,8 +1219,10 @@ export default function AnalyzePage() {
           >
             {!verifiedEmail
               ? 'התחבר עם Google כדי להתחיל'
-              : emailLimitExceeded
+              : isAnalysisBlocked(apiReady)
                 ? 'בחר מסלול להמשך ←'
+                : canRunFullAnalysis(apiReady)
+                  ? 'קבל דוח מלא ←'
                 : apiReady?.demoMode
                 ? 'קבל דוח לדוגמה ←'
                 : 'קבל משוב לסרטון ←'}
@@ -1226,7 +1289,7 @@ export default function AnalyzePage() {
                 </>
               )}
               <button type="button" className="btn-action" onClick={reset}>
-                {hasUsedFreeAnalysis() ? 'בחר מסלול להמשך ←' : 'סרטון חדש'}
+                {!canRunFullAnalysis(apiReady) && hasUsedFreeAnalysis() ? 'בחר מסלול להמשך ←' : 'סרטון חדש'}
               </button>
             </div>
           </div>
@@ -1315,13 +1378,19 @@ export default function AnalyzePage() {
 
           <div className="report__bottom-cta">
             <p>עזר? שתף עם מי שמעלה רילסים</p>
-            <button
-              type="button"
-              className="btn-action btn-action--primary"
-              onClick={() => goToPricing(navigate)}
-            >
-              המשך לניתוחים נוספים ←
-            </button>
+            {canRunFullAnalysis(apiReady) ? (
+              <button type="button" className="btn-action btn-action--primary" onClick={reset}>
+                נתח סרטון נוסף ←
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn-action btn-action--primary"
+                onClick={() => goToPricing(navigate)}
+              >
+                המשך לניתוחים נוספים ←
+              </button>
+            )}
             <Link to="/" className="btn-action">חזרה לדף הבית</Link>
           </div>
             </>

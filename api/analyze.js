@@ -1,8 +1,13 @@
 import {
-  freeLimitResponse,
   markFreeUsageUsed,
-  resolveFreeUsage,
 } from './lib/freeUsage.js';
+import {
+  accessHealthExtras,
+  accessLimitResponse,
+  resolveAnalysisAccess,
+} from './lib/analysisAccess.js';
+import { deductCredit } from './lib/credits.js';
+import { isCardcomConfigured } from './lib/cardcom.js';
 import { getHealthInfo, runOpenAiAnalysis, runTeaserAnalysis } from './lib/openaiAnalyze.js';
 
 const SUPABASE_URL = 'https://hgfyokwxcvuufzskvloi.supabase.co';
@@ -929,16 +934,14 @@ export default async function handler(req, res) {
   const openaiKey = process.env.OPENAI_API_KEY?.trim();
 
   try {
-    const usage = await resolveFreeUsage(req, req.body || {}, {
+    const usage = await resolveAnalysisAccess(req, {
       requireAuth: req.method === 'POST',
     });
 
     if (req.method === 'GET') {
-      const freeRemaining = usage.allowed ? 1 : 0;
       const healthExtras = {
-        freeRemaining,
-        requiresEmailAuth: Boolean(usage.requiresEmailAuth),
-        ...(usage.enforcement === 'email' && usage.email ? { verifiedEmail: true } : {}),
+        ...accessHealthExtras(usage),
+        paymentConfigured: isCardcomConfigured(),
       };
       if (openaiKey) {
         sendJson(res, 200, { ...getHealthInfo(openaiKey), ...healthExtras });
@@ -962,18 +965,31 @@ export default async function handler(req, res) {
     }
 
     if (!usage.allowed) {
-      sendJson(res, usage.status || 402, freeLimitResponse(usage));
+      sendJson(res, usage.status || 402, accessLimitResponse(usage));
       return;
     }
 
-    const isTeaser = Boolean(usage.allowed && usage.isTeaser);
+    const isTeaser = usage.mode === 'teaser';
     const analysisResult = await runAnalysis(req.body || {}, openaiKey, { teaser: isTeaser });
     if (!analysisResult.ok) {
       sendJson(res, analysisResult.status, { error: analysisResult.error });
       return;
     }
 
-    await markFreeUsageUsed(req, res, usage);
+    if (usage.mode === 'full' && usage.emailHash) {
+      try {
+        const remaining = await deductCredit(usage.emailHash);
+        analysisResult.data.analysisCredits = remaining;
+        analysisResult.data.isTeaser = false;
+      } catch (err) {
+        sendJson(res, 402, { error: err instanceof Error ? err.message : 'אין יתרת ניתוחים' });
+        return;
+      }
+    } else if (usage.mode === 'teaser') {
+      await markFreeUsageUsed(req, res, usage);
+      analysisResult.data.isTeaser = true;
+    }
+
     sendJson(res, 200, analysisResult.data);
   } catch (err) {
     sendJson(res, 500, { error: err instanceof Error ? err.message : 'Proxy error' });

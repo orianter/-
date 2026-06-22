@@ -1,7 +1,10 @@
-import { useEffect } from 'react';
-import { openContactFallback } from '../lib/planCheckout';
+import { useEffect, useState } from 'react';
+import { openContactFallback, startOnlineCheckout } from '../lib/planCheckout';
 
 export function CheckoutModal({ state, onClose }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
   useEffect(() => {
     if (!state) return undefined;
     const onKey = (e) => {
@@ -15,10 +18,31 @@ export function CheckoutModal({ state, onClose }) {
     };
   }, [state, onClose]);
 
+  useEffect(() => {
+    setError(null);
+    setLoading(false);
+  }, [state]);
+
   if (!state) return null;
 
   const { plan, displayPrice, introOffer } = state;
   const hasDiscount = introOffer?.active && plan.id === introOffer.planId;
+
+  const handlePay = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const payment = await startOnlineCheckout(plan.id);
+      window.location.href = payment.paymentUrl;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'שגיאה בתשלום');
+      setLoading(false);
+      if (String(err?.message || '').includes('לא מוגדר')) {
+        openContactFallback(plan, displayPrice, introOffer);
+        onClose();
+      }
+    }
+  };
 
   return (
     <div className="checkout-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-title">
@@ -54,15 +78,14 @@ export function CheckoutModal({ state, onClose }) {
         <p className="checkout-modal__note">
           14 יום החזר כספי מלא · הדוח הוא המלצה — לא הבטחת תוצאות
         </p>
+        {error && <p className="checkout-modal__error" role="alert">{error}</p>}
         <button
           type="button"
           className="btn-hero btn-hero--full"
-          onClick={() => {
-            openContactFallback(plan, displayPrice, introOffer);
-            onClose();
-          }}
+          disabled={loading}
+          onClick={handlePay}
         >
-          להמשך תשלום ←
+          {loading ? 'מעביר לתשלום…' : 'להמשך תשלום ←'}
         </button>
         <button type="button" className="checkout-modal__secondary" onClick={onClose}>
           חזרה למסלולים

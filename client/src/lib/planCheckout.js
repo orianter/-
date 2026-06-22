@@ -1,7 +1,6 @@
+import { analyzeHeaders } from '../api';
+import { getIntroOffer, getDiscountedPrice } from './introOffer';
 import { CONTACT, PRICING_PLANS } from '../data/content';
-import { getDiscountedPrice, getIntroOffer } from './introOffer';
-import { hasUsedFreeAnalysis } from './usageLocal';
-import { isPaywallLanding } from './paywallMode';
 
 export function getPlanById(planId) {
   return PRICING_PLANS.find((p) => p.id === planId);
@@ -42,8 +41,25 @@ export function openContactFallback(plan, displayPrice, introOffer) {
   window.location.href = `mailto:?subject=${subject}&body=${body}`;
 }
 
-/** Cardcom is server-only — frontend uses modal + contact fallback. */
-export function startCheckout(planId, { introOffer, openModal } = {}) {
+export async function startOnlineCheckout(planId) {
+  const headers = await analyzeHeaders({ 'Content-Type': 'application/json' });
+  const res = await fetch('/api/payment/create', {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    body: JSON.stringify({ planId }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'שגיאה ביצירת תשלום');
+  }
+  if (!data.paymentUrl) {
+    throw new Error('לא התקבל קישור תשלום');
+  }
+  return data;
+}
+
+export async function startCheckout(planId, { introOffer, openModal } = {}) {
   const plan = getPlanById(planId);
   if (!plan) return;
 
@@ -55,23 +71,30 @@ export function startCheckout(planId, { introOffer, openModal } = {}) {
     return;
   }
 
-  openContactFallback(plan, displayPrice, offer);
+  try {
+    const payment = await startOnlineCheckout(plan.id);
+    window.location.href = payment.paymentUrl;
+  } catch {
+    openContactFallback(plan, displayPrice, offer);
+  }
 }
 
 export function shouldShowFreeCta(options = {}) {
-  const freeUsed = options.freeUsed ?? hasUsedFreeAnalysis();
-  const paywall = options.paywall ?? isPaywallLanding();
-  return !freeUsed && !paywall;
+  const freeUsed = options.freeUsed ?? false;
+  const paywall = options.paywall ?? false;
+  const hasCredits = (options.analysisCredits || 0) > 0;
+  return !freeUsed && !paywall && !hasCredits;
 }
 
 export function getPlanCta(plan, options = {}) {
-  const freeUsed = options.freeUsed ?? hasUsedFreeAnalysis();
-  const paywall = options.paywall ?? isPaywallLanding();
+  const freeUsed = options.freeUsed ?? false;
+  const paywall = options.paywall ?? false;
+  const hasCredits = (options.analysisCredits || 0) > 0;
   const introOffer = options.introOffer ?? getIntroOffer();
   const hasDiscount = introOffer?.active && plan.id === introOffer.planId;
   const displayPrice = getPlanDisplayPrice(plan, introOffer);
 
-  if (!freeUsed && !paywall) {
+  if (!freeUsed && !paywall && !hasCredits && plan.billing === 'once') {
     return { type: 'free', label: 'תצוגה מקדימה ←', href: '/analyze' };
   }
 

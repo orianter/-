@@ -3,13 +3,14 @@ import { Link } from 'react-router-dom';
 import { hasUsedFreeAnalysis } from '../lib/usageLocal';
 import { isPaywallLanding } from '../lib/paywallMode';
 
-export function HomeStickyCta() {
+export function HomeStickyCta({ analysisCredits = 0 }) {
   const [visible, setVisible] = useState(false);
-  const freeUsed = hasUsedFreeAnalysis();
+  const freeUsed = hasUsedFreeAnalysis() && analysisCredits <= 0;
   const paywall = isPaywallLanding();
+  const hasCredits = analysisCredits > 0;
 
   useEffect(() => {
-    if (freeUsed || paywall) return undefined;
+    if (freeUsed || paywall || hasCredits) return undefined;
 
     const hero = document.querySelector('.hero');
     if (!hero) return undefined;
@@ -20,9 +21,9 @@ export function HomeStickyCta() {
     );
     observer.observe(hero);
     return () => observer.disconnect();
-  }, [freeUsed, paywall]);
+  }, [freeUsed, paywall, hasCredits]);
 
-  if (!visible || freeUsed || paywall) return null;
+  if (!visible || freeUsed || paywall || hasCredits) return null;
 
   return (
     <div className="home-sticky-cta" role="complementary" aria-label="התחל ניתוח חינם">
