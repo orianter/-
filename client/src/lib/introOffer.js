@@ -36,15 +36,24 @@ export function getDiscountedPrice(originalPrice, discountPercent = INTRO_OFFER.
   return Math.round(originalPrice * (1 - discountPercent / 100));
 }
 
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
 export function formatOfferCountdown(expiresAt) {
+  return formatOfferCountdownLive(expiresAt);
+}
+
+/** Live countdown with seconds — updates every second in UI. */
+export function formatOfferCountdownLive(expiresAt) {
   const ms = Math.max(0, expiresAt - Date.now());
   const hours = Math.floor(ms / (60 * 60 * 1000));
   const minutes = Math.floor((ms % (60 * 60 * 1000)) / (60 * 1000));
+  const seconds = Math.floor((ms % (60 * 1000)) / 1000);
   if (hours >= 24) {
     const days = Math.floor(hours / 24);
     const remHours = hours % 24;
-    return `${days} ימים ו-${remHours} שעות`;
+    return `${days} ימים, ${pad2(remHours)}:${pad2(minutes)}:${pad2(seconds)}`;
   }
-  if (hours > 0) return `${hours} שעות ו-${minutes} דקות`;
-  return `${minutes} דקות`;
+  return `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`;
 }

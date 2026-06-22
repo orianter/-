@@ -143,6 +143,11 @@ body.nav-open {
   box-shadow: 0 6px 22px var(--accent-glow);
 }
 
+.navbar__cta--upgrade {
+  background: linear-gradient(135deg, var(--accent-2), #1dd4cf);
+  box-shadow: 0 4px 16px rgba(37, 244, 238, 0.35);
+}
+
 .navbar__backdrop {
   display: none;
 }

@@ -357,3 +357,136 @@ textarea,
 select {
   font-size: max(16px, 1rem);
 }
+
+/* ───────────────── Checkout modal ───────────────── */
+.checkout-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 1rem max(1rem, var(--safe-right)) calc(1rem + var(--safe-bottom)) max(1rem, var(--safe-left));
+}
+
+.checkout-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  border: none;
+  cursor: pointer;
+}
+
+.checkout-modal__panel {
+  position: relative;
+  width: min(420px, 100%);
+  max-height: min(90vh, 640px);
+  overflow-y: auto;
+  padding: 1.75rem 1.5rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: calc(var(--radius) + 4px);
+  box-shadow: var(--shadow-card);
+  text-align: right;
+  animation: fadeUp 0.35s var(--ease);
+}
+
+.checkout-modal__close {
+  position: absolute;
+  top: 0.85rem;
+  left: 0.85rem;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.checkout-modal__tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent-2);
+  margin-bottom: 0.5rem;
+}
+
+.checkout-modal__panel h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.35rem;
+}
+
+.checkout-modal__desc {
+  margin: 0 0 1rem;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.checkout-modal__price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.checkout-modal__was {
+  text-decoration: line-through;
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.checkout-modal__price strong {
+  font-size: 2.2rem;
+  font-weight: 900;
+}
+
+.checkout-modal__price > span:last-child {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.checkout-modal__features {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.checkout-modal__features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.45rem;
+}
+
+.checkout-modal__features span {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.checkout-modal__note {
+  margin: 0 0 1rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.checkout-modal__secondary {
+  display: block;
+  width: 100%;
+  margin-top: 0.65rem;
+  padding: 0.65rem;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 0.88rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.checkout-modal__secondary:hover {
+  color: var(--text);
+}

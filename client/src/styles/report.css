@@ -1127,3 +1127,48 @@
     font-size: 0.85rem;
   }
 }
+
+.report-upgrade-cta {
+  margin: 0.5rem 0 0;
+}
+
+.report-upgrade-cta__inner {
+  padding: 1.35rem 1.5rem;
+  background: linear-gradient(135deg, rgba(254, 44, 85, 0.08), rgba(37, 244, 238, 0.05));
+  border: 1px solid rgba(254, 44, 85, 0.25);
+  border-radius: var(--radius);
+  text-align: right;
+}
+
+.report-upgrade-cta__tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent-2);
+  background: var(--surface);
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  margin-bottom: 0.5rem;
+}
+
+.report-upgrade-cta h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1.1rem;
+}
+
+.report-upgrade-cta p {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.report-upgrade-cta__offer {
+  margin: 0 0 1rem !important;
+  font-size: 0.88rem !important;
+  color: var(--text) !important;
+}
+
+.report-upgrade-cta__offer strong {
+  color: var(--accent-2);
+}

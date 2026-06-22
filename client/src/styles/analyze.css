@@ -779,6 +779,69 @@ input:focus, textarea:focus {
   margin-top: 0.85rem;
 }
 
+.intro-offer--report .intro-offer__social {
+  margin: 0.25rem 0 0.65rem;
+}
+
+.analyze-trust-line {
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: 0.65rem;
+}
+
+.analyze-page--upsell {
+  padding-bottom: calc(5.5rem + var(--safe-bottom));
+}
+
+.report-sticky-upsell {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 95;
+  padding: 0.75rem max(1rem, var(--safe-left)) calc(0.75rem + var(--safe-bottom)) max(1rem, var(--safe-right));
+  background: rgba(5, 5, 8, 0.94);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(254, 44, 85, 0.35);
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.report-sticky-upsell__inner {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.report-sticky-upsell__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-align: right;
+}
+
+.report-sticky-upsell__text strong {
+  font-size: 0.95rem;
+}
+
+.report-sticky-upsell__text span {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.report-sticky-upsell__text s {
+  opacity: 0.6;
+  margin-inline-end: 0.35rem;
+}
+
+.report-sticky-upsell__btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .report__bottom-cta {
   display: flex;
   flex-wrap: wrap;

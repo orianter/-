@@ -21,9 +21,13 @@ import {
   Timeline,
 } from '../components/Report';
 import { IntroOfferBanner } from '../components/IntroOfferBanner';
+import { CheckoutModal } from '../components/CheckoutModal';
+import { ReportStickyUpsell } from '../components/ReportStickyUpsell';
+import { ReportUpgradeCTA } from '../components/ReportUpgradeCTA';
 import { extractAudioForWhisper } from '../lib/audioWhisper';
 import { activateIntroOffer } from '../lib/introOffer';
 import { goToPricing } from '../lib/goToPricing';
+import { markFreeAnalysisUsed, syncFreeAnalysisFromApi, hasUsedFreeAnalysis } from '../lib/usageLocal';
 import { MAX_VIDEO_DURATION_SEC, MAX_VIDEO_DURATION_TOLERANCE } from '../lib/videoLimits';
 import {
   detectSharePlatform,
@@ -470,11 +474,13 @@ export default function AnalyzePage() {
   const [authStep, setAuthStep] = useState('idle');
   const [authError, setAuthError] = useState(null);
   const [verifiedEmail, setVerifiedEmail] = useState('');
+  const [checkout, setCheckout] = useState(null);
   const fileInputRef = useRef(null);
   const stepTimerRef = useRef(null);
 
   const applyUsageStatus = useCallback((data) => {
     setApiReady(data);
+    syncFreeAnalysisFromApi(data);
     if (data.freeRemaining === 0) {
       if (data.requiresEmailAuth) {
         setRequiresEmailAuth(true);
@@ -702,6 +708,7 @@ export default function AnalyzePage() {
       setStepIndex(STEPS.length - 1);
       setResult(data);
       activateIntroOffer();
+      markFreeAnalysisUsed();
       setApiReady((prev) => ({ ...(prev || {}), freeRemaining: 0 }));
       setEmailLimitExceeded(true);
       setFreeBlocked(true);
@@ -738,6 +745,10 @@ export default function AnalyzePage() {
   };
 
   const reset = () => {
+    if (hasUsedFreeAnalysis() || emailLimitExceeded || freeBlocked) {
+      goToPricing(navigate);
+      return;
+    }
     setFile(null);
     setResult(null);
     setError(null);
@@ -779,7 +790,7 @@ export default function AnalyzePage() {
   const platformLabel = PLATFORMS.find((p) => p.id === result?.platform)?.label;
 
   return (
-    <div className={`analyze-page ${result ? 'analyze-page--report' : ''}`}>
+    <div className={`analyze-page ${result ? 'analyze-page--report analyze-page--upsell' : ''}`}>
       <div className="analyze-page__head">
         <h1>{result ? 'הדוח שלך מוכן' : 'נתח את הסרטון שלך'}</h1>
         <p>
@@ -802,7 +813,8 @@ export default function AnalyzePage() {
         <div className="analyze-auth" role="region" aria-label="התחברות">
           <h2 className="analyze-auth__title">התחבר כדי לנתח</h2>
           <p className="analyze-auth__desc">
-            ניתוח חינמי אחד לכל חשבון. לחיצה אחת עם Google — בלי סיסמה ובלי קוד באימייל.
+            ניתוח חינמי <strong>אחד בלבד</strong> לכל חשבון — אחר כך בוחרים מסלול.
+            התחברות מהירה עם Google, בלי סיסמה.
           </p>
           {authError && (
             <p className="analyze-auth__error" role="alert">{authError}</p>
@@ -823,7 +835,7 @@ export default function AnalyzePage() {
             </span>
             {authStep === 'redirecting' ? 'מעביר ל-Google...' : 'המשך עם Google'}
           </button>
-          <p className="analyze-auth__fine">בלחיצה את/ה מאשר/ת ניתוח חינמי אחד לחשבון Google שלך.</p>
+          <p className="analyze-auth__fine">בלחיצה את/ה מאשר/ת ניתוח חינמי אחד — לאחר מכן נדרש מסלול בתשלום.</p>
         </div>
       )}
 
@@ -1134,9 +1146,9 @@ export default function AnalyzePage() {
                 : 'קבל משוב לסרטון ←'}
           </button>
 
-          <p id="analyze-help" className="analyze-disclaimer">
+          <p id="analyze-help" className="analyze-disclaimer analyze-trust-line">
             {!file && !linkLoading && 'העלה סרטון או הדבק קישור שיתוף. '}
-            הסרטון לא נשמר · הדוח הוא המלצה — לא הבטחת תוצאות
+            הסרטון לא נשמר · 14 יום החזר כספי · הדוח הוא המלצה — לא הבטחת תוצאות
           </p>
         </div>
       )}
@@ -1182,12 +1194,13 @@ export default function AnalyzePage() {
                 הורד כקובץ
               </button>
               <button type="button" className="btn-action" onClick={reset}>
-                סרטון חדש
+                {hasUsedFreeAnalysis() ? 'בחר מסלול להמשך ←' : 'סרטון חדש'}
               </button>
             </div>
           </div>
 
           <ReportQuickStart priorityFixes={analysis.priorityFixes} />
+          <ReportUpgradeCTA categories={analysis.categories} onCheckout={setCheckout} />
           <ReportWeakAreas categories={analysis.categories} />
           <CategoryScores categories={analysis.categories} />
 
@@ -1239,17 +1252,24 @@ export default function AnalyzePage() {
             )}
           </ReportDeepDive>
 
-          <IntroOfferBanner variant="report" />
+          <IntroOfferBanner variant="report" onCheckout={setCheckout} />
 
           <div className="report__bottom-cta">
             <p>עזר? שתף עם מי שמעלה רילסים</p>
-            <Link to="/?pricing=1#pricing" className="btn-action btn-action--primary">
-              המשך לניתוחים נוספים
-            </Link>
+            <button
+              type="button"
+              className="btn-action btn-action--primary"
+              onClick={() => goToPricing(navigate)}
+            >
+              המשך לניתוחים נוספים ←
+            </button>
             <Link to="/" className="btn-action">חזרה לדף הבית</Link>
           </div>
         </div>
       )}
+
+      {result && analysis && <ReportStickyUpsell onCheckout={setCheckout} />}
+      <CheckoutModal state={checkout} onClose={() => setCheckout(null)} />
     </div>
   );
 }

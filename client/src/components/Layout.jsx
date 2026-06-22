@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { hasUsedFreeAnalysis } from '../lib/usageLocal';
 import './Layout.css';
 
 export function Navbar() {
   const { pathname } = useLocation();
   const onAnalyze = pathname === '/analyze';
   const [menuOpen, setMenuOpen] = useState(false);
+  const freeUsed = hasUsedFreeAnalysis();
 
   useEffect(() => {
     setMenuOpen(false);
@@ -23,6 +25,13 @@ export function Navbar() {
       <a href="/#faq" onClick={() => setMenuOpen(false)}>שאלות</a>
     </>
   );
+
+  const ctaHref = freeUsed ? '/?pricing=1#pricing' : '/analyze';
+  const ctaLabel = onAnalyze
+    ? '← חזרה לדף הבית'
+    : freeUsed
+      ? 'שדרג עכשיו'
+      : 'נתח סרטון';
 
   return (
     <nav className="navbar" aria-label="ניווט ראשי">
@@ -50,13 +59,31 @@ export function Navbar() {
           className={`navbar__links ${menuOpen ? 'navbar__links--open' : ''}`}
         >
           {navLinks}
-          <Link
-            to="/analyze"
-            className="navbar__cta"
-            onClick={() => setMenuOpen(false)}
-          >
-            {onAnalyze ? '← חזרה לדף הבית' : 'נתח סרטון'}
-          </Link>
+          {onAnalyze ? (
+            <Link
+              to="/"
+              className="navbar__cta"
+              onClick={() => setMenuOpen(false)}
+            >
+              {ctaLabel}
+            </Link>
+          ) : freeUsed ? (
+            <a
+              href={ctaHref}
+              className="navbar__cta navbar__cta--upgrade"
+              onClick={() => setMenuOpen(false)}
+            >
+              {ctaLabel}
+            </a>
+          ) : (
+            <Link
+              to={ctaHref}
+              className="navbar__cta"
+              onClick={() => setMenuOpen(false)}
+            >
+              {ctaLabel}
+            </Link>
+          )}
         </div>
       </div>
       {menuOpen && (

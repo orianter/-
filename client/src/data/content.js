@@ -204,9 +204,31 @@ export const COMPARISON = {
 
 export const TRUST_STATS = [
   { value: '6+', label: 'ציונים לסרטון' },
+  { value: '₪2.6', label: 'לניתוח במסלול חודשי' },
   { value: '45–90', label: 'שניות לדוח' },
-  { value: '100%', label: 'בעברית' },
   { value: '1', label: 'ניתוח ראשון חינם' },
+];
+
+/** Optional — leave empty for generic mailto fallback in checkout. */
+export const CONTACT = {
+  email: '',
+  whatsapp: '',
+};
+
+export const PRICING_OBJECTIONS = [
+  {
+    q: 'למה לשלם?',
+    a: 'הניתוח הראשון חינם — אתה משלם רק אם רוצה להמשיך. מקבל משוב מסודר לפני שמעלה, במקום לנחש.',
+  },
+  {
+    q: 'מה אם לא יעזור?',
+    a: '14 יום החזר כספי מלא — בלי שאלות.',
+    link: { href: '/#pricing', label: 'ראה ערבות החזר' },
+  },
+  {
+    q: 'איך מבטלים?',
+    a: 'מבטלים בכל עת מהאזור האישי או בפנייה אלינו — בלי קנסות.',
+  },
 ];
 
 export const FAQ_ITEMS = [
