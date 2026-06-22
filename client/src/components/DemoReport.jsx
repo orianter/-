@@ -2,9 +2,9 @@ import {
   AnalysisSection,
   CategoryScores,
   DetailedFindings,
-  ImprovementPlan,
-  MeasuredEvidence,
-  PriorityFixes,
+  ReportExtraTips,
+  ReportQuickStart,
+  ReportWeakAreas,
   ScoreRing,
   Timeline,
 } from './Report';
@@ -25,18 +25,14 @@ export function DemoReportPreview() {
           <p className="demo-report__summary">{analysis.summary}</p>
         </div>
       </div>
-      <ImprovementPlan
-        priorityFixes={analysis.priorityFixes}
-        whatToChange={analysis.whatToChange}
-        howToImprove={analysis.howToImprove}
-      />
-      <DetailedFindings items={analysis.detailedFindings} />
-      <PriorityFixes items={analysis.priorityFixes} />
+      <ReportQuickStart priorityFixes={analysis.priorityFixes} />
+      <ReportWeakAreas categories={analysis.categories} />
       <CategoryScores categories={analysis.categories} />
+      <ReportExtraTips whatToChange={analysis.whatToChange} howToImprove={analysis.howToImprove} />
+      <DetailedFindings items={analysis.detailedFindings} />
       <Timeline items={analysis.timeline} />
       <div className="demo-report__sections">
         <AnalysisSection title="למה לא עבד" items={analysis.whyItFailed} variant="fail" icon="✕" subtitle="סיבות עם ראיה" />
-        <AnalysisSection title="מה לשנות" items={analysis.whatToChange} variant="change" icon="✎" subtitle="שינויים קונקרטיים" />
       </div>
       {analysis.hookSuggestion && (
         <section className="report-section report-section--hook">

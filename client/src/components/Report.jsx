@@ -9,6 +9,15 @@ const CATEGORY_ICONS = {
   platformFit: '📱',
 };
 
+const CATEGORY_NAMES = {
+  hook: 'פתיחה',
+  pacing: 'קצב',
+  message: 'מסר',
+  visual: 'ויזואל',
+  audio: 'אודיו',
+  platformFit: 'התאמה לפלטפורמה',
+};
+
 export function scoreColor(score) {
   if (score >= 8) return 'var(--success)';
   if (score >= 5) return 'var(--warning)';
@@ -50,65 +59,123 @@ export function ReportCostEstimate() {
   return null;
 }
 
-export function ImprovementPlan({ priorityFixes, whatToChange, howToImprove }) {
-  const steps = [
-    ...(priorityFixes || []).slice(0, 4).map((text, i) => ({
-      num: i + 1,
-      title: 'תיקון דחוף',
-      text,
-      type: 'urgent',
-    })),
-    ...(whatToChange || []).slice(0, 3).map((text, i) => ({
-      num: (priorityFixes?.length || 0) + i + 1,
-      title: 'מה לשנות',
-      text,
-      type: 'change',
-    })),
-    ...(howToImprove || []).slice(0, 3).map((text, i) => ({
-      num: (priorityFixes?.length || 0) + (whatToChange?.length || 0) + i + 1,
-      title: 'איך לשפר',
-      text,
-      type: 'grow',
-    })),
-  ].slice(0, 9);
-
-  if (!steps.length) return null;
+/** Top 3 actions — clearest entry point in the report */
+export function ReportQuickStart({ priorityFixes }) {
+  const items = (priorityFixes || []).slice(0, 3);
+  if (!items.length) return null;
 
   return (
-    <section className="improvement-plan">
-      <div className="improvement-plan__head">
-        <h3>תוכנית שיפור — מה לעשות עכשיו</h3>
-        <p>ממוין לפי השפעה — התחל מלמעלה</p>
+    <section className="report-quick-start" aria-labelledby="report-quick-start-heading">
+      <div className="report-quick-start__head">
+        <h3 id="report-quick-start-heading">התחל כאן — 3 דברים לשפר</h3>
+        <p>עשה את אלה בסרטון הבא, לפי הסדר. זה מה שישפיע הכי הרבה.</p>
       </div>
-      <div className="improvement-plan__grid">
-        {steps.map((step) => (
-          <article key={`${step.type}-${step.num}`} className={`improvement-plan__card improvement-plan__card--${step.type}`}>
-            <span className="improvement-plan__step">{step.num}</span>
-            <span className="improvement-plan__type">{step.title}</span>
-            <p>{step.text}</p>
-          </article>
+      <ol className="report-quick-start__list">
+        {items.map((text, i) => (
+          <li key={i} className="report-quick-start__item">
+            <span className="report-quick-start__num" aria-hidden="true">{i + 1}</span>
+            <span className="report-quick-start__text">{text}</span>
+          </li>
         ))}
-      </div>
+      </ol>
     </section>
+  );
+}
+
+/** Weak category chips — at-a-glance */
+export function ReportWeakAreas({ categories }) {
+  if (!categories) return null;
+  const weak = CATEGORY_ORDER
+    .map((key) => ({ key, ...categories[key] }))
+    .filter((c) => c.label && typeof c.score === 'number' && c.score <= 6)
+    .sort((a, b) => a.score - b.score);
+
+  if (!weak.length) return null;
+
+  return (
+    <section className="report-weak-areas" aria-labelledby="report-weak-heading">
+      <h3 id="report-weak-heading" className="report-weak-areas__title">איפה הכי חלש</h3>
+      <ul className="report-weak-areas__list">
+        {weak.map((cat) => (
+          <li key={cat.key} className="report-weak-areas__chip">
+            <span className="report-weak-areas__label">{cat.label || CATEGORY_NAMES[cat.key]}</span>
+            <span className="report-weak-areas__score" style={{ color: scoreColor(cat.score) }}>
+              {cat.score}/10
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Extra tips after the top 3 — no duplicate urgent fixes */
+export function ReportExtraTips({ whatToChange, howToImprove }) {
+  const tips = [
+    ...(whatToChange || []).slice(0, 2).map((text) => ({ text, type: 'change', label: 'לשנות' })),
+    ...(howToImprove || []).slice(0, 2).map((text) => ({ text, type: 'grow', label: 'לשפר' })),
+  ].slice(0, 4);
+
+  if (!tips.length) return null;
+
+  return (
+    <section className="report-extra-tips" aria-labelledby="report-extra-heading">
+      <h3 id="report-extra-heading">עוד רעיונות לשיפור</h3>
+      <ul className="report-extra-tips__list">
+        {tips.map((tip, i) => (
+          <li key={i} className={`report-extra-tips__item report-extra-tips__item--${tip.type}`}>
+            <span className="report-extra-tips__tag">{tip.label}</span>
+            {tip.text}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+export function ReportDeepDive({ children, title = 'פרטים נוספים בדוח' }) {
+  return (
+    <details className="report-deep-dive">
+      <summary className="report-deep-dive__summary">{title}</summary>
+      <div className="report-deep-dive__body">{children}</div>
+    </details>
+  );
+}
+
+/** @deprecated use ReportQuickStart + ReportExtraTips */
+export function ImprovementPlan({ priorityFixes, whatToChange, howToImprove }) {
+  return (
+    <>
+      <ReportQuickStart priorityFixes={priorityFixes} />
+      <ReportExtraTips whatToChange={whatToChange} howToImprove={howToImprove} />
+    </>
   );
 }
 
 export function CategoryScores({ categories }) {
   if (!categories) return null;
 
-  const items = CATEGORY_ORDER.map((key) => ({ key, ...categories[key] })).filter((c) => c.label);
+  const items = CATEGORY_ORDER
+    .map((key) => ({ key, ...categories[key] }))
+    .filter((c) => c.label)
+    .sort((a, b) => a.score - b.score);
 
   return (
-    <section className="category-scores">
+    <section className="category-scores" aria-labelledby="category-scores-heading">
       <div className="category-scores__head">
-        <h3>ציון לפי קטגוריה</h3>
-        <p>כל קטגוריה עם הסבר ספציפי לסרטון שלך</p>
+        <h3 id="category-scores-heading">ציונים לפי נושא</h3>
+        <p>מסודר מהחלש לחזק — התמקד בקטגוריות עם ציון נמוך</p>
       </div>
       <div className="category-scores__grid">
         {items.map((cat) => (
-          <div key={cat.key} className="category-item">
+          <div
+            key={cat.key}
+            className={`category-item${cat.score <= 6 ? ' category-item--weak' : ''}`}
+          >
             <div className="category-item__top">
-              <span className="category-item__icon">{CATEGORY_ICONS[cat.key]}</span>
+              <span className="category-item__icon" aria-hidden="true">{CATEGORY_ICONS[cat.key]}</span>
+              <span className="visually-hidden">{CATEGORY_NAMES[cat.key]}</span>
+              {cat.score <= 6 && <span className="category-item__weak-badge">דורש שיפור</span>}
               <div className="category-item__header">
                 <span className="category-item__label">{cat.label}</span>
                 <span className="category-item__score" style={{ color: scoreColor(cat.score) }}>
@@ -253,24 +320,9 @@ export function AnalysisSection({ title, items, variant, icon, subtitle }) {
   );
 }
 
+/** @deprecated use ReportQuickStart */
 export function PriorityFixes({ items }) {
-  if (!items?.length) return null;
-  return (
-    <section className="priority-fixes">
-      <div className="priority-fixes__head">
-        <h3>התיקונים הכי דחופים</h3>
-        <p>עשה את אלה קודם — הכי הרבה השפעה על הביצועים</p>
-      </div>
-      <ol>
-        {items.map((item, i) => (
-          <li key={i}>
-            <span className="priority-fixes__num">{i + 1}</span>
-            <span>{item}</span>
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
+  return <ReportQuickStart priorityFixes={items} />;
 }
 
 export function Timeline({ items }) {

@@ -83,7 +83,7 @@ export default function HomePage() {
           <div className="section-head">
             <span className="section-tag">פשוט ומהיר</span>
             <h2>איך זה עובד?</h2>
-            <p>3 צעדים. בלי הרשמה. בלי להבין טכנולוגיה.</p>
+            <p>3 צעדים · התחברות מהירה עם Google</p>
           </div>
           <div className="how__steps">
             {STEPS.map((step, i) => (

@@ -8,10 +8,12 @@ import {
   buildReportText,
   CategoryScores,
   DetailedFindings,
-  ImprovementPlan,
   MeasuredEvidence,
   OnScreenText,
-  PriorityFixes,
+  ReportDeepDive,
+  ReportExtraTips,
+  ReportQuickStart,
+  ReportWeakAreas,
   ScoreRing,
   SpeechMetricsSummary,
   scoreColor,
@@ -756,7 +758,7 @@ export default function AnalyzePage() {
         <p>
           {result
             ? 'משוב על הסרטון שלך — לא הבטחת תוצאות'
-            : 'העלה רילס, מלא פרטים, וקבל משוב עם ציונים והמלצות מדויקות'}
+            : 'העלה רילס, התחבר עם Google, וקבל משוב ברור — מה לשפר ואיך'}
         </p>
       </div>
 
@@ -855,6 +857,7 @@ export default function AnalyzePage() {
               <div
                 key={step.label}
                 className={`step ${i < stepIndex ? 'step--done' : ''} ${i === stepIndex ? 'step--active' : ''}`}
+                aria-current={i === stepIndex ? 'step' : undefined}
               >
                 <span className="step__icon">{i < stepIndex ? '✓' : step.icon}</span>
                 <span>{step.label}</span>
@@ -1141,7 +1144,7 @@ export default function AnalyzePage() {
             <div className="report__verdict-wrap">
               <ScoreRing score={analysis.score} />
               <div className="report__score-block">
-                <p className="report__verdict-label">ציון משוער</p>
+                <p className="report__verdict-label">ציון כללי</p>
                 <span
                   className="report__score-badge"
                   style={{ color: scoreColor(analysis.score), borderColor: `${scoreColor(analysis.score)}44` }}
@@ -1158,6 +1161,7 @@ export default function AnalyzePage() {
                 </p>
               </div>
             </div>
+            <p className="report__summary-label">בקצרה</p>
             <p className="report__summary">{analysis.summary}</p>
             <div className="report__actions">
               <button type="button" className="btn-action btn-action--primary" onClick={copyReport}>
@@ -1172,69 +1176,57 @@ export default function AnalyzePage() {
             </div>
           </div>
 
-          <ImprovementPlan
-            priorityFixes={analysis.priorityFixes}
-            whatToChange={analysis.whatToChange}
-            howToImprove={analysis.howToImprove}
-          />
-          <DetailedFindings items={analysis.detailedFindings} />
-          <OnScreenText items={analysis.onScreenText} />
-          <MeasuredEvidence items={analysis.measuredEvidence} />
-          <PriorityFixes items={analysis.priorityFixes} />
+          <ReportQuickStart priorityFixes={analysis.priorityFixes} />
+          <ReportWeakAreas categories={analysis.categories} />
           <CategoryScores categories={analysis.categories} />
-          <Timeline items={analysis.timeline} />
-
-          <div className="report__sections">
-            <AnalysisSection
-              title="למה לא עבד"
-              subtitle="סיבות ספציפיות לפי הנתונים"
-              items={analysis.whyItFailed}
-              variant="fail"
-              icon="✕"
-            />
-            <AnalysisSection
-              title="מה לשנות"
-              subtitle="שינויים קונקרטיים לסרטון הבא"
-              items={analysis.whatToChange}
-              variant="change"
-              icon="✎"
-            />
-            <AnalysisSection
-              title="איך להפוך לטוב"
-              subtitle="עקרונות לשיפור מתמשך"
-              items={analysis.howToImprove}
-              variant="improve"
-              icon="↑"
-            />
-            <AnalysisSection
-              title="טיפים לפלטפורמה"
-              subtitle={`מותאם ל-${platformLabel}`}
-              items={analysis.platformTips}
-              variant="tips"
-              icon="★"
-            />
-          </div>
 
           {analysis.hookSuggestion && (
-            <section className="report-section report-section--hook">
-              <h3>פתיחה מוצעת</h3>
+            <section className="report-section report-section--hook" aria-labelledby="hook-heading">
+              <h3 id="hook-heading">פתיחה מוצעת — העתק ושימוש</h3>
               <p className="hook-text">"{analysis.hookSuggestion}"</p>
             </section>
           )}
 
           {analysis.scriptSuggestion && (
-            <section className="report-section report-section--script">
-              <h3>תסריט משופר</h3>
+            <section className="report-section report-section--script" aria-labelledby="script-heading">
+              <h3 id="script-heading">תסריט משופר — לסרטון הבא</h3>
               <pre>{analysis.scriptSuggestion}</pre>
             </section>
           )}
 
-          {result.transcript && !result.transcript.startsWith('(') && (
-            <details className="transcript">
-              <summary>תמלול הדיבור</summary>
-              <pre>{result.transcript}</pre>
-            </details>
-          )}
+          <ReportExtraTips
+            whatToChange={analysis.whatToChange}
+            howToImprove={analysis.howToImprove}
+          />
+
+          <ReportDeepDive title="רוצה יותר פירוט? לחץ כאן">
+            <DetailedFindings items={analysis.detailedFindings} />
+            <MeasuredEvidence items={analysis.measuredEvidence} />
+            <Timeline items={analysis.timeline} />
+            <OnScreenText items={analysis.onScreenText} />
+            <div className="report__sections">
+              <AnalysisSection
+                title="למה לא עבד"
+                subtitle="סיבות לפי הנתונים"
+                items={analysis.whyItFailed}
+                variant="fail"
+                icon="✕"
+              />
+              <AnalysisSection
+                title="טיפים לפלטפורמה"
+                subtitle={`מותאם ל-${platformLabel}`}
+                items={analysis.platformTips}
+                variant="tips"
+                icon="★"
+              />
+            </div>
+            {result.transcript && !result.transcript.startsWith('(') && (
+              <details className="transcript">
+                <summary>תמלול הדיבור</summary>
+                <pre>{result.transcript}</pre>
+              </details>
+            )}
+          </ReportDeepDive>
 
           <div className="report__bottom-cta">
             <p>עזר? שתף עם מי שמעלה רילסים</p>
