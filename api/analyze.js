@@ -3,7 +3,7 @@ import {
   markFreeUsageUsed,
   resolveFreeUsage,
 } from './lib/freeUsage.js';
-import { getHealthInfo, runOpenAiAnalysis } from './lib/openaiAnalyze.js';
+import { getHealthInfo, runOpenAiAnalysis, runTeaserAnalysis } from './lib/openaiAnalyze.js';
 
 const SUPABASE_URL = 'https://hgfyokwxcvuufzskvloi.supabase.co';
 const SUPABASE_ANON_KEY =
@@ -831,9 +831,64 @@ async function trySupabaseAnalysis(body) {
   return isStaleAnalysis(parsed) ? null : parsed;
 }
 
-async function runAnalysis(body, openaiKey) {
+function normalizeTeaserUpstream(data, input) {
+  const analysis = data?.analysis && typeof data.analysis === 'object' ? data.analysis : {};
+  return {
+    isTeaser: true,
+    demo: false,
+    simplified: true,
+    durationSec: Number(data?.durationSec) || Number(input?.durationSec) || 60,
+    platform: input?.platform || data?.platform || 'tiktok',
+    videoMeta: {
+      fileName: input?.fileName || data?.videoMeta?.fileName || '',
+      fileType: input?.fileType || data?.videoMeta?.fileType || '',
+      fileSizeMb: Number(input?.fileSizeMb) || data?.videoMeta?.fileSizeMb || null,
+      width: Number(input?.width) || data?.videoMeta?.width || null,
+      height: Number(input?.height) || data?.videoMeta?.height || null,
+      isVertical: Number(input?.height) > Number(input?.width),
+    },
+    transcript: '',
+    whisperUsed: false,
+    speechMetrics: null,
+    pacingMetrics: null,
+    costEstimate: data?.costEstimate || null,
+    frameTimestamps: (input?.frameMetrics || []).map((f) => f.second).filter(Number.isFinite),
+    dataSources: {
+      frameCount: (input?.frameMetrics || []).length,
+      visionFrames: 0,
+      audioAnalyzed: Boolean(input?.audioMetrics?.analyzed),
+      hasContentBrief: Boolean(input?.contentBrief?.trim()),
+      hasTranscript: false,
+      teaser: true,
+    },
+    analysis: {
+      score: clampScore(analysis.score),
+      verdict: asText(analysis.verdict),
+      summary: asText(analysis.summary),
+      categories: analysis.categories || {},
+      priorityFixes: [],
+      whyItFailed: [],
+      whatToChange: [],
+      howToImprove: [],
+      hookSuggestion: '',
+      scriptSuggestion: '',
+      platformTips: [],
+      timeline: [],
+      measuredEvidence: [],
+      detailedFindings: [],
+      onScreenText: [],
+      teaserLockedHint: asText(analysis.teaserLockedHint),
+    },
+  };
+}
+
+async function runAnalysis(body, openaiKey, { teaser = false } = {}) {
   if (openaiKey) {
     try {
+      if (teaser) {
+        const upstream = await runTeaserAnalysis(body || {}, openaiKey);
+        return { ok: true, data: normalizeTeaserUpstream(upstream, body || {}) };
+      }
       const upstream = await runOpenAiAnalysis(body || {}, openaiKey);
       return { ok: true, data: normalizeUpstream(upstream, body || {}) };
     } catch (err) {
@@ -911,7 +966,8 @@ export default async function handler(req, res) {
       return;
     }
 
-    const analysisResult = await runAnalysis(req.body || {}, openaiKey);
+    const isTeaser = Boolean(usage.allowed && usage.isTeaser);
+    const analysisResult = await runAnalysis(req.body || {}, openaiKey, { teaser: isTeaser });
     if (!analysisResult.ok) {
       sendJson(res, analysisResult.status, { error: analysisResult.error });
       return;

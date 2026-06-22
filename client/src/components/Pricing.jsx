@@ -51,7 +51,7 @@ export function Pricing({ onCheckout }) {
           <p>
             {paywall
               ? 'הניתוח החינמי נוצל · 14 יום החזר כספי מלא'
-              : 'הניתוח הראשון חינם · שנתי חוסך עד 27%'}
+              : 'תצוגה מקדימה חינם · שנתי חוסך עד 27%'}
           </p>
         </div>
 
@@ -174,7 +174,7 @@ export function Pricing({ onCheckout }) {
         <div className="pricing__guarantee">
           <span className="pricing__guarantee-icon">🛡️</span>
           <div>
-            <strong>ניתוח ראשון חינם + 14 יום החזר כספי מלא</strong>
+            <strong>תצוגה מקדימה חינם + 14 יום החזר כספי מלא</strong>
             <p>נסה בלי כרטיס אשראי. הדוח הוא המלצה — לא הבטחת תוצאות. לא אהבת? החזר מלא.</p>
           </div>
         </div>

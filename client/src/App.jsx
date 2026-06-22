@@ -6,6 +6,7 @@ import './styles/global.css';
 import './styles/landing.css';
 import './styles/analyze.css';
 import './styles/report.css';
+import './styles/report-teaser.css';
 
 export default function App() {
   return (

@@ -567,6 +567,153 @@ export async function runOpenAiAnalysis(input, apiKey) {
   };
 }
 
+function buildTeaserPrompt(input) {
+  const platform = normalizePlatform(input.platform);
+  const platformLabel = PLATFORM_LABELS[platform] || PLATFORM_LABELS.tiktok;
+  const contentBrief = asText(input.contentBrief, 'לא צוין').slice(0, 400);
+  const durationSec = Number(input.durationSec);
+
+  return `אתה מנתח טיזר קצר לרילס (${platformLabel}). יש לך רק מדדי פריימים/אודיו — בלי תמלול ובלי תמונות.
+החזר JSON קצר בלבד:
+{
+  "score": <1-10>,
+  "verdict": "<משפט אחד חד>",
+  "summary": "<2 משפטים עם מספר/ראיה>",
+  "hook": { "score": <1-10>, "note": "<משפט אחד על הפתיחה 0-3 שנ'>" },
+  "lockedHint": "<משפט שמרמז על 2-3 בעיות נוספות בלי לפרט — למשל 'יש סימנים לחולשה גם בקצב, מסר ו-CTA'>"
+}
+
+## הקשר
+- תיאור: ${contentBrief}
+- אורך: ${Number.isFinite(durationSec) ? `${durationSec.toFixed(0)} שניות` : 'לא זוהה'}
+
+## מדדי פריימים (Hook)
+${formatFrameMetrics((input.frameMetrics || []).filter((f) => Number(f.second) <= 5))}
+
+## סיכום מדידה
+${formatAnalysisDigest(input.analysisDigest) || 'לא התקבל.'}
+
+## מדדי אודיו
+${formatAudioMetrics(input.audioMetrics)}
+
+אל תמציא דיבור. היה ספציפי רק לפתיחה.`;
+}
+
+function buildTeaserAnalysis(raw, input) {
+  const overall = clampScore(raw.score);
+  const hookScore = clampScore(raw.hook?.score ?? raw.score);
+  const categories = {};
+
+  for (const key of CATEGORY_KEYS) {
+    if (key === 'hook') {
+      categories[key] = {
+        score: hookScore,
+        label: CATEGORY_LABELS[key],
+        note: asText(raw.hook?.note, '—'),
+        locked: false,
+      };
+    } else {
+      categories[key] = {
+        score: 0,
+        label: CATEGORY_LABELS[key],
+        note: 'זמין בדוח המלא',
+        locked: true,
+      };
+    }
+  }
+
+  const lockedHint = asText(raw.lockedHint);
+  const summary = [asText(raw.summary), lockedHint].filter(Boolean).join(' ');
+
+  return {
+    score: overall,
+    verdict: asText(raw.verdict, 'יש מקום לשיפור — פרטים בדוח המלא'),
+    summary: summary || 'תצוגה מקדימה — חלק מהממצאים נעולים.',
+    categories,
+    categoryDetails: null,
+    detailedFindings: [],
+    priorityFixes: [],
+    whyItFailed: [],
+    whatToChange: [],
+    howToImprove: [],
+    hookSuggestion: '',
+    scriptSuggestion: '',
+    platformTips: [],
+    onScreenText: [],
+    timeline: [],
+    teaserLockedHint: lockedHint,
+  };
+}
+
+export async function runTeaserAnalysis(input, apiKey) {
+  const platform = normalizePlatform(input.platform);
+  const durationSec = Math.round((Number(input.durationSec) || 60) * 10) / 10;
+  if (durationSec > 125) throw new Error('הסרטון ארוך מדי. המקסימום הוא 2 דקות (120 שניות).');
+
+  const prompt = buildTeaserPrompt(input);
+  const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content: 'מנתח טיזר לרילס. JSON בלבד, עברית, קצר. אל תפרט תיקונים מלאים — רק רמז.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      max_tokens: 450,
+      temperature: 0.25,
+    }),
+  });
+
+  const openaiJson = await openaiResponse.json();
+  if (!openaiResponse.ok) {
+    throw new Error(openaiJson?.error?.message || 'שגיאה ביצירת תצוגה מקדימה');
+  }
+
+  const content = openaiJson.choices?.[0]?.message?.content;
+  if (!content) throw new Error('לא התקבלה תשובה');
+
+  const parsed = parseModelJson(content);
+  const analysis = buildTeaserAnalysis(parsed, input);
+  const costEstimate = estimateAnalysisCostUsd(durationSec, {
+    hasVision: false,
+    hasWhisper: false,
+    visionFrameCount: 0,
+  });
+
+  return {
+    isTeaser: true,
+    demo: false,
+    simplified: true,
+    durationSec,
+    platform,
+    videoMeta: {
+      fileName: asText(input.fileName),
+      fileType: asText(input.fileType),
+      fileSizeMb: Number(input.fileSizeMb) || null,
+      width: Number(input.width) || null,
+      height: Number(input.height) || null,
+      isVertical: Number(input.height) > Number(input.width),
+    },
+    transcript: '',
+    whisperUsed: false,
+    speechMetrics: null,
+    pacingMetrics: null,
+    costEstimate,
+    frameTimestamps: Array.isArray(input.frameMetrics)
+      ? input.frameMetrics.map((f) => Number(f.second)).filter(Number.isFinite)
+      : [],
+    analysis,
+  };
+}
+
 export function getHealthInfo(apiKey) {
   return {
     ok: true,
@@ -575,6 +722,7 @@ export function getHealthInfo(apiKey) {
     maxDurationSec: 120,
     maxFileMb: 100,
     freeTierLimit: 1,
+    freeTierMode: 'teaser',
     service: apiKey ? 'vercel-openai' : 'supabase-proxy',
     model: 'gpt-4o',
     vision: true,

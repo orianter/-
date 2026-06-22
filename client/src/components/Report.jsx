@@ -59,6 +59,47 @@ export function ReportCostEstimate() {
   return null;
 }
 
+/** Teaser preview banner */
+export function ReportTeaserBanner({ onUnlock }) {
+  return (
+    <div className="report-teaser-banner" role="status">
+      <span className="report-teaser-banner__tag">תצוגה מקדימה</span>
+      <h3 className="report-teaser-banner__title">ראית את הציון — הדוח המלא נעול</h3>
+      <p className="report-teaser-banner__desc">
+        תיקונים, תסריט, ציונים לכל הנושאים, תמלול וציר זמן — בדוח המלא אחרי בחירת מסלול.
+      </p>
+      <button type="button" className="btn-hero btn-hero--sm" onClick={onUnlock}>
+        פתח את הדוח המלא ←
+      </button>
+    </div>
+  );
+}
+
+/** Locked section overlay for teaser mode */
+export function ReportLockedBlock({ title, subtitle, items = 3, onUnlock, children }) {
+  return (
+    <div className="report-locked">
+      <div className="report-locked__content" aria-hidden="true">
+        {children || (
+          <ul className="report-locked__fake-list">
+            {Array.from({ length: items }, (_, i) => (
+              <li key={i}>████████ ████████ ██████</li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="report-locked__overlay">
+        <span className="report-locked__icon" aria-hidden="true">🔒</span>
+        <strong>{title}</strong>
+        {subtitle && <p>{subtitle}</p>}
+        <button type="button" className="btn-hero btn-hero--sm" onClick={onUnlock}>
+          פתח בדוח המלא ←
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Top 3 actions — clearest entry point in the report */
 export function ReportQuickStart({ priorityFixes }) {
   const items = (priorityFixes || []).slice(0, 3);
@@ -152,8 +193,53 @@ export function ImprovementPlan({ priorityFixes, whatToChange, howToImprove }) {
   );
 }
 
-export function CategoryScores({ categories }) {
+export function CategoryScores({ categories, teaserMode = false }) {
   if (!categories) return null;
+
+  if (teaserMode) {
+    const hook = categories.hook;
+    const lockedKeys = CATEGORY_ORDER.filter((key) => key !== 'hook');
+
+    return (
+      <section className="category-scores category-scores--teaser" aria-labelledby="category-scores-heading">
+        <div className="category-scores__head">
+          <h3 id="category-scores-heading">ציונים לפי נושא</h3>
+          <p>פתיחה בלבד בתצוגה המקדימה — שאר הנושאים בדוח המלא</p>
+        </div>
+        {hook?.label && (
+          <div className="category-scores__grid category-scores__grid--single">
+            <div className={`category-item${hook.score <= 6 ? ' category-item--weak' : ''}`}>
+              <div className="category-item__top">
+                <span className="category-item__icon" aria-hidden="true">{CATEGORY_ICONS.hook}</span>
+                <div className="category-item__header">
+                  <span className="category-item__label">{hook.label}</span>
+                  <span className="category-item__score" style={{ color: scoreColor(hook.score) }}>
+                    {hook.score}/10
+                  </span>
+                </div>
+              </div>
+              <div className="category-item__bar">
+                <div
+                  className="category-item__fill"
+                  style={{ width: `${hook.score * 10}%`, background: scoreColor(hook.score) }}
+                />
+              </div>
+              <p className="category-item__note">{hook.note}</p>
+            </div>
+          </div>
+        )}
+        <div className="category-scores__locked-row">
+          {lockedKeys.map((key) => (
+            <div key={key} className="category-item category-item--locked">
+              <span className="category-item__icon" aria-hidden="true">{CATEGORY_ICONS[key]}</span>
+              <span className="category-item__label">{CATEGORY_NAMES[key]}</span>
+              <span className="category-item__lock">🔒</span>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
 
   const items = CATEGORY_ORDER
     .map((key) => ({ key, ...categories[key] }))

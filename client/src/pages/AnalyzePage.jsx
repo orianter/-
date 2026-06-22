@@ -13,6 +13,8 @@ import {
   ReportDeepDive,
   ReportExtraTips,
   ReportQuickStart,
+  ReportTeaserBanner,
+  ReportLockedBlock,
   ReportWeakAreas,
   ScoreRing,
   SpeechMetricsSummary,
@@ -660,10 +662,15 @@ export default function AnalyzePage() {
       if (videoMeta.durationSec && videoMeta.durationSec > MAX_VIDEO_DURATION_TOLERANCE) {
         throw new Error('הסרטון ארוך מדי. המקסימום הוא 2 דקות (120 שניות).');
       }
+      const isTeaserRun = Boolean(
+        apiReady?.freeRemaining === 1
+        && !apiReady?.demoMode
+        && verifiedEmail
+      );
       const [{ frameMetrics, frameImages }, audioMetrics, whisperAudio] = await Promise.all([
         sampleVideoFrames(file, videoMeta.durationSec),
         analyzeAudio(file, videoMeta.durationSec),
-        extractAudioForWhisper(file, videoMeta.durationSec),
+        isTeaserRun ? Promise.resolve({ available: false }) : extractAudioForWhisper(file, videoMeta.durationSec),
       ]);
       const analysisDigest = buildAnalysisDigest(frameMetrics, videoMeta, audioMetrics);
       const payload = {
@@ -678,11 +685,11 @@ export default function AnalyzePage() {
         fileSizeMb: Math.round((file.size / 1024 / 1024) * 10) / 10,
         ...videoMeta,
         frameMetrics,
-        frameImages,
+        frameImages: isTeaserRun ? [] : frameImages,
         audioMetrics,
         analysisDigest,
       };
-      if (whisperAudio?.available && whisperAudio.base64) {
+      if (!isTeaserRun && whisperAudio?.available && whisperAudio.base64) {
         payload.audioWavBase64 = whisperAudio.base64;
       }
       const headers = await analyzeHeaders({ 'Content-Type': 'application/json' });
@@ -768,6 +775,10 @@ export default function AnalyzePage() {
   };
 
   const copyReport = async () => {
+    if (result?.isTeaser) {
+      goToPricing(navigate);
+      return;
+    }
     const label = PLATFORMS.find((p) => p.id === result.platform)?.label || '';
     await navigator.clipboard.writeText(buildReportText({ result, platformLabel: label }));
     setCopied(true);
@@ -775,6 +786,10 @@ export default function AnalyzePage() {
   };
 
   const downloadReport = () => {
+    if (result?.isTeaser) {
+      goToPricing(navigate);
+      return;
+    }
     const label = PLATFORMS.find((p) => p.id === result.platform)?.label || '';
     const text = buildReportText({ result, platformLabel: label });
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
@@ -786,23 +801,27 @@ export default function AnalyzePage() {
     URL.revokeObjectURL(url);
   };
 
+  const unlockFullReport = () => goToPricing(navigate);
+
   const { analysis } = result || {};
   const platformLabel = PLATFORMS.find((p) => p.id === result?.platform)?.label;
 
   return (
     <div className={`analyze-page ${result ? 'analyze-page--report analyze-page--upsell' : ''}`}>
       <div className="analyze-page__head">
-        <h1>{result ? 'הדוח שלך מוכן' : 'נתח את הסרטון שלך'}</h1>
+        <h1>{result ? (result.isTeaser ? 'תצוגה מקדימה — הדוח המלא נעול' : 'הדוח שלך מוכן') : 'נתח את הסרטון שלך'}</h1>
         <p>
           {result
-            ? 'משוב על הסרטון שלך — לא הבטחת תוצאות'
-            : 'העלה רילס, התחבר עם Google, וקבל משוב ברור — מה לשפר ואיך'}
+            ? (result.isTeaser
+              ? 'ראית את הציון והפתיחה — לתיקונים, תסריט וכל הציונים: בחר מסלול'
+              : 'משוב על הסרטון שלך — לא הבטחת תוצאות')
+            : 'העלה רילס, התחבר עם Google, וקבל תצוגה מקדימה — הדוח המלא במסלול בתשלום'}
         </p>
       </div>
 
       {apiReady && apiReady.ok && verifiedEmail && apiReady.freeRemaining === 1 && !apiReady.demoMode && !loading && !result && (
         <div className="analyze-alert analyze-alert--ok analyze-auth-status">
-          <strong>✓ מחובר/ת כ-{verifiedEmail}</strong> — יש לך ניתוח חינמי אחד. העלה סרטון והתחל.
+          <strong>✓ מחובר/ת כ-{verifiedEmail}</strong> — יש לך תצוגה מקדימה אחת. העלה סרטון והתחל.
           <button type="button" className="analyze-auth-status__signout" onClick={handleSignOut}>
             התנתק
           </button>
@@ -813,7 +832,7 @@ export default function AnalyzePage() {
         <div className="analyze-auth" role="region" aria-label="התחברות">
           <h2 className="analyze-auth__title">התחבר כדי לנתח</h2>
           <p className="analyze-auth__desc">
-            ניתוח חינמי <strong>אחד בלבד</strong> לכל חשבון — אחר כך בוחרים מסלול.
+            תצוגה מקדימה <strong>אחת בלבד</strong> לכל חשבון — הדוח המלא במסלול בתשלום.
             התחברות מהירה עם Google, בלי סיסמה.
           </p>
           {authError && (
@@ -835,7 +854,7 @@ export default function AnalyzePage() {
             </span>
             {authStep === 'redirecting' ? 'מעביר ל-Google...' : 'המשך עם Google'}
           </button>
-          <p className="analyze-auth__fine">בלחיצה את/ה מאשר/ת ניתוח חינמי אחד — לאחר מכן נדרש מסלול בתשלום.</p>
+          <p className="analyze-auth__fine">בלחיצה את/ה מאשר/ת תצוגה מקדימה אחת — הדוח המלא דורש מסלול בתשלום.</p>
         </div>
       )}
 
@@ -1157,13 +1176,18 @@ export default function AnalyzePage() {
         <div id="report" className="report" aria-labelledby="report-heading">
           <h2 id="report-heading" className="visually-hidden">דוח הניתוח</h2>
           <div className="report__top">
-            {result.demo && (
+            {result.isTeaser && (
+              <div className="report__demo-badge report__demo-badge--teaser">
+                תצוגה מקדימה · חלק מהדוח נעול
+              </div>
+            )}
+            {result.demo && !result.isTeaser && (
               <div className="report__demo-badge">
                 דוח הדגמה · מבוסס על נתוני הסרטון האמיתיים שלך
               </div>
             )}
             <AiDisclaimer variant="short" />
-            <SpeechMetricsSummary metrics={result.speechMetrics} />
+            {!result.isTeaser && <SpeechMetricsSummary metrics={result.speechMetrics} />}
             <div className="report__verdict-wrap">
               <ScoreRing score={analysis.score} />
               <div className="report__score-block">
@@ -1187,18 +1211,53 @@ export default function AnalyzePage() {
             <p className="report__summary-label">בקצרה</p>
             <p className="report__summary">{analysis.summary}</p>
             <div className="report__actions">
-              <button type="button" className="btn-action btn-action--primary" onClick={copyReport}>
-                {copied ? '✓ הועתק' : 'העתק דוח'}
-              </button>
-              <button type="button" className="btn-action" onClick={downloadReport}>
-                הורד כקובץ
-              </button>
+              {result.isTeaser ? (
+                <button type="button" className="btn-action btn-action--primary" onClick={unlockFullReport}>
+                  פתח דוח מלא ←
+                </button>
+              ) : (
+                <>
+                  <button type="button" className="btn-action btn-action--primary" onClick={copyReport}>
+                    {copied ? '✓ הועתק' : 'העתק דוח'}
+                  </button>
+                  <button type="button" className="btn-action" onClick={downloadReport}>
+                    הורד כקובץ
+                  </button>
+                </>
+              )}
               <button type="button" className="btn-action" onClick={reset}>
                 {hasUsedFreeAnalysis() ? 'בחר מסלול להמשך ←' : 'סרטון חדש'}
               </button>
             </div>
           </div>
 
+          {result.isTeaser && <ReportTeaserBanner onUnlock={unlockFullReport} />}
+
+          {result.isTeaser ? (
+            <>
+              <CategoryScores categories={analysis.categories} teaserMode />
+              <ReportLockedBlock
+                title="3 תיקונים דחופים"
+                subtitle="מה לשנות קודם — לפי סדר עדיפות"
+                items={3}
+                onUnlock={unlockFullReport}
+              />
+              <ReportLockedBlock
+                title="פתיחה ותסריט משופר"
+                subtitle="משפט פתיחה + תסריט מלא עם שניות"
+                items={2}
+                onUnlock={unlockFullReport}
+              />
+              <ReportLockedBlock
+                title="ניתוח מפורט + ציר זמן"
+                subtitle="ממצאים עם ראיה, תמלול, טקסט על המסך"
+                items={4}
+                onUnlock={unlockFullReport}
+              />
+              <IntroOfferBanner variant="report" onCheckout={setCheckout} />
+            </>
+          ) : (
+            <>
           <ReportQuickStart priorityFixes={analysis.priorityFixes} />
           <ReportUpgradeCTA categories={analysis.categories} onCheckout={setCheckout} />
           <ReportWeakAreas categories={analysis.categories} />
@@ -1265,6 +1324,8 @@ export default function AnalyzePage() {
             </button>
             <Link to="/" className="btn-action">חזרה לדף הבית</Link>
           </div>
+            </>
+          )}
         </div>
       )}
 

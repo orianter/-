@@ -50,7 +50,7 @@ export default function HomePage() {
         <div className="hero__content">
           <span className="hero__pill">
             <span className="hero__pill-dot" />
-            {freeUsed ? 'בחר מסלול להמשך' : 'ניתוח ראשון חינם · בלי כרטיס אשראי'}
+            {freeUsed ? 'בחר מסלול להמשך' : 'תצוגה מקדימה · בלי כרטיס אשראי'}
           </span>
           <h1>
             גלה למה הרילס שלך
@@ -63,7 +63,7 @@ export default function HomePage() {
             {' '}<strong>14 יום החזר כספי</strong> אם לא תרגיש שזה עזר — הדוח הוא המלצה, לא הבטחה.
           </p>
           {!freeUsed && (
-            <p className="hero__scarcity">ניתוח ראשון חינם — שנתי מ-₪58 לחודש</p>
+            <p className="hero__scarcity">תצוגה מקדימה חינם — דוח מלא מ-₪58/חודש (שנתי)</p>
           )}
           <div className="hero__actions">
             {freeUsed ? (
@@ -73,7 +73,7 @@ export default function HomePage() {
               </a>
             ) : (
               <Link to="/analyze" className="btn-hero">
-                נתח סרטון בחינם
+                {freeUsed ? 'בחר מסלול ←' : 'קבל תצוגה מקדימה'}
                 <span>←</span>
               </Link>
             )}

@@ -5,9 +5,9 @@ const SUPABASE_URL = (process.env.SUPABASE_URL || 'https://hgfyokwxcvuufzskvloi.
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || '';
 const COOKIE_NAME = 'ra_free_used';
 const FINGERPRINT_HEADER = 'x-device-fingerprint';
-const FREE_LIMIT_MESSAGE = 'הניתוח החינמי כבר נוצל — בחר מסלול';
-const EMAIL_LIMIT_MESSAGE = 'כבר ניצלת את הניתוח החינמי עם כתובת האימייל הזו — בחר מסלול';
-const EMAIL_AUTH_REQUIRED_MESSAGE = 'יש לאמת אימייל לפני הניתוח החינמי';
+const FREE_LIMIT_MESSAGE = 'כבר קיבלת תצוגה מקדימה — בחר מסלול לדוח המלא';
+const EMAIL_LIMIT_MESSAGE = 'כבר קיבלת תצוגה מקדימה עם כתובת האימייל הזו — בחר מסלול לדוח המלא';
+const EMAIL_AUTH_REQUIRED_MESSAGE = 'יש להתחבר עם Google לפני התצוגה המקדימה';
 const EMAIL_SERVICE_MESSAGE = 'שירות האימות לא מוגדר — נסה שוב מאוחר יותר';
 
 export {
@@ -246,6 +246,7 @@ async function resolveEmailUsage(req, { requireAuth = true } = {}) {
     return {
       allowed: true,
       freeRemaining: 1,
+      isTeaser: true,
       email,
       emailHash: hashEmail(email),
       enforcement: 'email-untracked',
@@ -286,6 +287,7 @@ async function resolveEmailUsage(req, { requireAuth = true } = {}) {
   return {
     allowed: true,
     freeRemaining: 1,
+    isTeaser: true,
     email,
     emailHash,
     enforcement: 'email',

@@ -72,7 +72,7 @@ export function getPlanCta(plan, options = {}) {
   const displayPrice = getPlanDisplayPrice(plan, introOffer);
 
   if (!freeUsed && !paywall) {
-    return { type: 'free', label: 'נסה חינם ←', href: '/analyze' };
+    return { type: 'free', label: 'תצוגה מקדימה ←', href: '/analyze' };
   }
 
   if (hasDiscount) {
