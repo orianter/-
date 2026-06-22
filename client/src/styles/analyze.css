@@ -754,3 +754,34 @@ input:focus, textarea:focus {
   line-height: 1.45;
   color: var(--muted);
 }
+
+.intro-offer--report {
+  margin: 1.5rem 0 0;
+  padding: 1.25rem 1.5rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent-2-dim);
+  background: linear-gradient(135deg, var(--accent-dim), var(--accent-2-dim));
+}
+
+.intro-offer--report .intro-offer__title {
+  margin: 0.5rem 0 0.35rem;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.intro-offer--report .intro-offer__desc {
+  margin: 0 0 0.5rem;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.intro-offer--report .intro-offer__cta {
+  margin-top: 0.85rem;
+}
+
+.report__bottom-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+}

@@ -1,6 +1,6 @@
 export function analyzePacingMetrics(frameMetrics = [], audioMetrics = null, durationSec = 60) {
   const frames = Array.isArray(frameMetrics) ? frameMetrics.filter((f) => Number.isFinite(Number(f.second))) : [];
-  const duration = Math.min(Math.max(Number(durationSec) || 60, 1), 60);
+  const duration = Math.min(Math.max(Number(durationSec) || 60, 1), 120);
   const findings = [];
   const fixes = [];
 

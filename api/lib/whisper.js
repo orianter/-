@@ -9,8 +9,8 @@ export function formatTranscript(transcription) {
     return segments
       .filter((seg) => seg && typeof seg.text === 'string' && seg.text.trim())
       .map((seg) => {
-        const start = Math.max(0, Math.round(Number(seg.start) || 0));
-        return `[${start}s] ${seg.text.trim()}`;
+        const start = Math.max(0, Math.round((Number(seg.start) || 0) * 10) / 10);
+        return `[${start.toFixed(1)}s] ${seg.text.trim()}`;
       })
       .join('\n');
   }
@@ -46,11 +46,14 @@ export async function transcribeAudioBase64(base64, apiKey, { language = 'he' } 
   return json;
 }
 
-export function estimateAnalysisCostUsd(durationSec = 30, { hasVision = false, hasWhisper = true } = {}) {
-  const minutes = Math.min(Math.max(Number(durationSec) || 30, 5), 60) / 60;
+export function estimateAnalysisCostUsd(durationSec = 30, { hasVision = false, hasWhisper = true, visionFrameCount = 8 } = {}) {
+  const minutes = Math.min(Math.max(Number(durationSec) || 30, 5), 120) / 60;
   const whisper = hasWhisper ? minutes * 0.006 : 0;
-  const gptInput = hasVision ? 0.025 + minutes * 0.015 : 0.008 + minutes * 0.004;
-  const gptOutput = hasVision ? 0.022 : 0.012;
+  const frames = hasVision ? Math.min(Math.max(Number(visionFrameCount) || 8, 1), 8) : 0;
+  const gptInput = hasVision
+    ? 0.012 + frames * 0.006 + minutes * 0.008
+    : 0.008 + minutes * 0.004;
+  const gptOutput = hasVision ? 0.028 : 0.012;
   const total = whisper + gptInput + gptOutput;
   return {
     whisperUsd: Math.round(whisper * 1000) / 1000,

@@ -1,5 +1,5 @@
 const WHISPER_SAMPLE_RATE = 16000;
-const MAX_WHISPER_SEC = 60;
+const MAX_WHISPER_SEC = 120;
 const MAX_BASE64_CHARS = 2_800_000;
 
 function resampleMono(channelData, fromRate, toRate, maxInputSamples) {

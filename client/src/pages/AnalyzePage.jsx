@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { analyzeFunctionUrl, analyzeHeaders, hasSupabaseConfig } from '../api';
 import { signInWithGoogle, signOutAuth, supabase } from '../lib/supabaseClient';
 import { AiDisclaimer } from '../components/AiDisclaimer';
@@ -20,7 +20,11 @@ import {
   scoreVerdictLabel,
   Timeline,
 } from '../components/Report';
+import { IntroOfferBanner } from '../components/IntroOfferBanner';
 import { extractAudioForWhisper } from '../lib/audioWhisper';
+import { activateIntroOffer } from '../lib/introOffer';
+import { goToPricing } from '../lib/goToPricing';
+import { MAX_VIDEO_DURATION_SEC, MAX_VIDEO_DURATION_TOLERANCE } from '../lib/videoLimits';
 import {
   detectSharePlatform,
   extractShareUrlFromText,
@@ -55,8 +59,8 @@ async function fetchUsageStatus() {
   return res.json();
 }
 const FRAME_SAMPLE_SIZE = 180;
-const VISION_FRAME_SIZE = 640;
-const VISION_FRAME_SIZE_HOOK = 768;
+const VISION_FRAME_SIZE = 704;
+const VISION_FRAME_SIZE_HOOK = 832;
 
 function average(items, key) {
   const values = items.map((item) => Number(item[key])).filter(Number.isFinite);
@@ -65,8 +69,8 @@ function average(items, key) {
 }
 
 function frameTimestamps(durationSec) {
-  const duration = Math.min(Math.max(Number(durationSec) || 0, 0), 60);
-  const points = new Set([0.15, 0.5, 1, 1.5, 2, 3, 4, 5]);
+  const duration = Math.min(Math.max(Number(durationSec) || 0, 0), MAX_VIDEO_DURATION_SEC);
+  const points = new Set([0.15, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5]);
 
   for (let t = 6; t < duration - 1; t += 3) {
     points.add(t);
@@ -74,33 +78,43 @@ function frameTimestamps(durationSec) {
   if (duration > 6) points.add(Math.round(duration * 0.25 * 10) / 10);
   if (duration > 10) points.add(Math.round(duration * 0.5 * 10) / 10);
   if (duration > 14) points.add(Math.round(duration * 0.75 * 10) / 10);
+  if (duration > 30) points.add(Math.round(duration * 0.35 * 10) / 10);
+  if (duration > 45) points.add(Math.round(duration * 0.55 * 10) / 10);
+  if (duration > 60) points.add(Math.round(duration * 0.7 * 10) / 10);
+  if (duration > 90) points.add(Math.round(duration * 0.85 * 10) / 10);
   if (duration > 4) points.add(Math.max(0.2, duration - 1.5));
   if (duration > 8) points.add(Math.max(0.5, duration - 0.5));
 
   return [...points]
     .filter((point) => point > 0 && point < duration)
     .sort((a, b) => a - b)
-    .slice(0, 14);
+    .slice(0, 32);
 }
 
 function visionFrameTimestamps(durationSec) {
-  const duration = Math.min(Math.max(Number(durationSec) || 0, 0), 60);
-  const points = [0.3, 1, 3];
+  const duration = Math.min(Math.max(Number(durationSec) || 0, 0), MAX_VIDEO_DURATION_SEC);
+  const points = [0.2, 0.6, 1, 2, 3];
   if (duration > 10) points.push(Math.round(duration * 0.45 * 10) / 10);
   if (duration > 6) points.push(Math.max(1, duration - 1.5));
-  return [...new Set(points.filter((p) => p > 0 && p < duration))].slice(0, 5);
+  if (duration > 8) points.push(Math.round(duration * 0.65 * 10) / 10);
+  if (duration > 4) points.push(Math.max(0.5, duration - 0.5));
+  if (duration > 30) points.push(Math.round(duration * 0.35 * 10) / 10);
+  if (duration > 45) points.push(Math.round(duration * 0.55 * 10) / 10);
+  if (duration > 60) points.push(Math.round(duration * 0.75 * 10) / 10);
+  if (duration > 90) points.push(Math.round(duration * 0.9 * 10) / 10);
+  return [...new Set(points.filter((p) => p > 0 && p < duration))].slice(0, 8);
 }
 
 function allSampleTimestamps(durationSec) {
   return [...new Set([...frameTimestamps(durationSec), ...visionFrameTimestamps(durationSec)])]
     .sort((a, b) => a - b)
-    .slice(0, 18);
+    .slice(0, 28);
 }
 
 function visionLabel(second, durationSec) {
   if (second <= 1) return 'פריים ראשון — Hook';
   if (second <= 3) return '3 שניות ראשונות — Hook';
-  if (second >= (durationSec || 60) * 0.65) return 'סיום — CTA';
+  if (second >= (durationSec || MAX_VIDEO_DURATION_SEC) * 0.65) return 'סיום — CTA';
   return 'אמצע הסרטון';
 }
 
@@ -172,7 +186,7 @@ function canvasToJpegBase64(canvas, quality = 0.68) {
 }
 
 async function analyzeAudio(file, durationSec) {
-  const maxSec = Math.min(Number(durationSec) || 60, 60);
+  const maxSec = Math.min(Number(durationSec) || MAX_VIDEO_DURATION_SEC, MAX_VIDEO_DURATION_SEC);
   try {
     const buffer = await file.arrayBuffer();
     const ctx = new AudioContext();
@@ -330,10 +344,10 @@ async function sampleVideoFrames(file, durationSec) {
 
     const captureVision = (second) => {
       if (!visionCtx) return;
-      const isHook = second <= 1;
+      const isHook = second <= 3;
       const size = isHook ? VISION_FRAME_SIZE_HOOK : VISION_FRAME_SIZE;
       drawScaledFrame(video, visionCanvas, visionCtx, size);
-      const base64 = canvasToJpegBase64(visionCanvas, isHook ? 0.75 : 0.68);
+      const base64 = canvasToJpegBase64(visionCanvas, isHook ? 0.78 : 0.72);
       if (base64) {
         frameImages.push({
           second,
@@ -388,7 +402,7 @@ async function sampleVideoFrames(file, durationSec) {
       video.currentTime = visionTargets[visionIndex];
     };
 
-    timer = setTimeout(finish, 20000);
+    timer = setTimeout(finish, 28000);
     video.muted = true;
     video.playsInline = true;
     video.preload = 'auto';
@@ -430,6 +444,7 @@ function readVideoMetadata(file) {
 }
 
 export default function AnalyzePage() {
+  const navigate = useNavigate();
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [platform, setPlatform] = useState('tiktok');
@@ -510,6 +525,17 @@ export default function AnalyzePage() {
     });
     return () => subscription.unsubscribe();
   }, [applyUsageStatus]);
+
+  useEffect(() => {
+    if (!verifiedEmail || loading || result) return;
+    if (emailLimitExceeded) {
+      goToPricing(navigate, { replace: true });
+      return;
+    }
+    if (apiReady?.ok && apiReady.freeRemaining === 0 && !requiresEmailAuth && !apiReady.demoMode) {
+      goToPricing(navigate, { replace: true });
+    }
+  }, [verifiedEmail, emailLimitExceeded, apiReady, requiresEmailAuth, loading, result, navigate]);
 
   useEffect(() => {
     if (!hasSupabaseConfig) {
@@ -625,8 +651,8 @@ export default function AnalyzePage() {
 
     try {
       const videoMeta = await readVideoMetadata(file);
-      if (videoMeta.durationSec && videoMeta.durationSec > 65) {
-        throw new Error('הסרטון ארוך מדי. המקסימום הוא דקה אחת.');
+      if (videoMeta.durationSec && videoMeta.durationSec > MAX_VIDEO_DURATION_TOLERANCE) {
+        throw new Error('הסרטון ארוך מדי. המקסימום הוא 2 דקות (120 שניות).');
       }
       const [{ frameMetrics, frameImages }, audioMetrics, whisperAudio] = await Promise.all([
         sampleVideoFrames(file, videoMeta.durationSec),
@@ -662,19 +688,20 @@ export default function AnalyzePage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        if (data.code === 'EMAIL_LIMIT_EXCEEDED' || data.code === 'EMAIL_AUTH_REQUIRED' || res.status === 402 || res.status === 401) {
-          if (data.code === 'EMAIL_AUTH_REQUIRED') {
-            setRequiresEmailAuth(true);
-          } else {
-            setEmailLimitExceeded(true);
-            setFreeBlocked(true);
-          }
+        if (data.code === 'EMAIL_AUTH_REQUIRED' || res.status === 401) {
+          setRequiresEmailAuth(true);
+          throw new Error(data.error || 'שגיאה בניתוח');
+        }
+        if (data.code === 'EMAIL_LIMIT_EXCEEDED' || res.status === 402) {
           setApiReady((prev) => ({ ...(prev || {}), freeRemaining: 0 }));
+          goToPricing(navigate, { replace: true });
+          return;
         }
         throw new Error(data.error || 'שגיאה בניתוח');
       }
       setStepIndex(STEPS.length - 1);
       setResult(data);
+      activateIntroOffer();
       setApiReady((prev) => ({ ...(prev || {}), freeRemaining: 0 }));
       setEmailLimitExceeded(true);
       setFreeBlocked(true);
@@ -797,22 +824,6 @@ export default function AnalyzePage() {
             {authStep === 'redirecting' ? 'מעביר ל-Google...' : 'המשך עם Google'}
           </button>
           <p className="analyze-auth__fine">בלחיצה את/ה מאשר/ת ניתוח חינמי אחד לחשבון Google שלך.</p>
-        </div>
-      )}
-
-      {emailLimitExceeded && verifiedEmail && !loading && !result && (
-        <div className="analyze-alert analyze-alert--warn" role="alert">
-          <strong>כבר ניצלת את הניתוח החינמי עם {verifiedEmail}.</strong>{' '}
-          לניתוח נוסף —{' '}
-          <Link to="/#pricing">בחר מסלול</Link>.
-        </div>
-      )}
-
-      {freeBlocked && !requiresEmailAuth && !emailLimitExceeded && !loading && !result && (
-        <div className="analyze-alert analyze-alert--warn" role="alert">
-          <strong>הניתוח החינמי כבר נוצל.</strong>{' '}
-          כדי לנתח סרטון נוסף —{' '}
-          <Link to="/#pricing">בחר מסלול</Link>.
         </div>
       )}
 
@@ -990,7 +1001,7 @@ export default function AnalyzePage() {
                 </div>
                 <p className="dropzone__title">גרור סרטון לכאן</p>
                 <p className="dropzone__sub">או לחץ לבחירת קובץ מהמכשיר</p>
-                <span className="dropzone__hint">MP4 · MOV · WebM · עד 60 שניות</span>
+                <span className="dropzone__hint">MP4 · MOV · WebM · עד 2 דקות (120 שניות)</span>
               </>
             )}
           </div>
@@ -1091,7 +1102,7 @@ export default function AnalyzePage() {
               {emailLimitExceeded && (
                 <>
                   {' '}
-                  <Link to="/#pricing">בחר מסלול ←</Link>
+                  <Link to="/?pricing=1#pricing">בחר מסלול ←</Link>
                 </>
               )}
             </div>
@@ -1117,7 +1128,7 @@ export default function AnalyzePage() {
             {!verifiedEmail
               ? 'התחבר עם Google כדי להתחיל'
               : emailLimitExceeded
-                ? 'הניתוח החינמי נוצל — בחר מסלול'
+                ? 'בחר מסלול להמשך ←'
                 : apiReady?.demoMode
                 ? 'קבל דוח לדוגמה ←'
                 : 'קבל משוב לסרטון ←'}
@@ -1228,8 +1239,13 @@ export default function AnalyzePage() {
             )}
           </ReportDeepDive>
 
+          <IntroOfferBanner variant="report" />
+
           <div className="report__bottom-cta">
             <p>עזר? שתף עם מי שמעלה רילסים</p>
+            <Link to="/?pricing=1#pricing" className="btn-action btn-action--primary">
+              המשך לניתוחים נוספים
+            </Link>
             <Link to="/" className="btn-action">חזרה לדף הבית</Link>
           </div>
         </div>

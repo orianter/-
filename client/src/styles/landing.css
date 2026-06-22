@@ -546,6 +546,70 @@
 
 .pricing-card__check { color: var(--success); font-weight: 700; flex-shrink: 0; }
 
+.pricing-card--offer {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 1px var(--accent-2-dim), 0 12px 40px rgba(0, 0, 0, 0.12);
+}
+
+.pricing-card__badge--offer {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+}
+
+.intro-offer {
+  margin-bottom: 1.75rem;
+  padding: 1.25rem 1.5rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent-2-dim);
+  background: linear-gradient(135deg, var(--accent-dim), var(--accent-2-dim));
+  text-align: center;
+}
+
+.intro-offer--pricing .intro-offer__title {
+  margin: 0.5rem 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.intro-offer__tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent-2);
+  background: var(--surface);
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+}
+
+.intro-offer__price {
+  margin: 0.75rem 0 0.35rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.intro-offer__was {
+  text-decoration: line-through;
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.intro-offer__price strong {
+  font-size: 2rem;
+  font-weight: 900;
+}
+
+.intro-offer__note,
+.intro-offer__timer {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .pricing__guarantee {
   display: flex;
   align-items: center;

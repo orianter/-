@@ -1,5 +1,6 @@
 const CTA_PATTERN = /(שלח|לחץ|כתוב|שמור|עקוב|קנה|דברו|השאירו|תגובה|לינק|ביו|וואטסאפ|whatsapp|dm|direct|הירשם|הצטרף|לחצו|עקבו)/i;
 const HOOK_PATTERN = /[?]|(איך|למה|כמה|מה|טעות|סוד|לפני|אחרי|אל|בלי|אם|תראו|תקשיבו|עצור|stop|wait)/i;
+const GENERIC_OPENING_PATTERN = /^(היי|שלום|הי|hey|hello|what'?s up|מה קורה|מה נשמע|בוקר טוב|ערב טוב)\b/i;
 
 function parseSegments(transcription, formattedText = '') {
   if (Array.isArray(transcription?.segments) && transcription.segments.length) {
@@ -27,7 +28,7 @@ function parseSegments(transcription, formattedText = '') {
 
 export function analyzeSpeechMetrics(transcription, formattedText = '', durationSec = 60) {
   const segments = parseSegments(transcription, formattedText);
-  const duration = Math.min(Math.max(Number(durationSec) || 60, 1), 60);
+  const duration = Math.min(Math.max(Number(durationSec) || 60, 1), 120);
 
   if (!segments.length) {
     return {
@@ -37,6 +38,8 @@ export function analyzeSpeechMetrics(transcription, formattedText = '', duration
       hookSpeechSec: null,
       hookHasSpeech: false,
       hookHasQuestionOrTension: false,
+      firstSpokenWords: null,
+      genericOpening: false,
       ctaAtSec: null,
       ctaInLastThird: false,
       longestPauseSec: null,
@@ -59,6 +62,9 @@ export function analyzeSpeechMetrics(transcription, formattedText = '', duration
   const hookText = hookSegments.map((s) => s.text).join(' ');
   const hookHasSpeech = hookSegments.length > 0;
   const hookHasQuestionOrTension = HOOK_PATTERN.test(hookText);
+  const hookWords = hookText.split(/\s+/).filter(Boolean);
+  const firstSpokenWords = hookWords.slice(0, 8).join(' ') || null;
+  const genericOpening = hookWords.length > 0 && GENERIC_OPENING_PATTERN.test(hookWords[0]);
 
   const lastThirdStart = duration * 0.66;
   const ctaSegment = [...segments].reverse().find((seg) => CTA_PATTERN.test(seg.text));
@@ -89,6 +95,11 @@ export function analyzeSpeechMetrics(transcription, formattedText = '', duration
   if (hookHasSpeech && !hookHasQuestionOrTension) {
     findings.push('ב-Hook המילולי אין שאלה/מתח ברור');
     fixes.push('פתח בשאלה או בהבטחה: "למה X?" / "טעות שכולם עושים"');
+  }
+
+  if (genericOpening) {
+    findings.push(`פתיחה גנרית ("${firstSpokenWords?.split(/\s+/)[0] || 'היי'}") — לא תופסת תשומת לב`);
+    fixes.push('החלף "היי/שלום" במשפט עם מתח, הבטחה או שאלה מיד בשנייה 0');
   }
 
   if (wpm > 185) {
@@ -124,6 +135,8 @@ export function analyzeSpeechMetrics(transcription, formattedText = '', duration
     hookSpeechSec,
     hookHasSpeech,
     hookHasQuestionOrTension,
+    firstSpokenWords,
+    genericOpening,
     ctaAtSec,
     ctaInLastThird,
     longestPauseSec: longestPauseSec ? Math.round(longestPauseSec * 10) / 10 : 0,
@@ -140,6 +153,8 @@ export function formatSpeechMetrics(metrics) {
   return [
     `- מילים: ${metrics.wordCount} · קצב: ${metrics.wpm} מילים/דקה`,
     `- דיבור ב-Hook (0-3 שנ'): ${metrics.hookHasSpeech ? `כן (מ-${metrics.hookSpeechSec}s)` : 'לא'}`,
+    metrics.firstSpokenWords ? `- מילים ראשונות ב-Hook: "${metrics.firstSpokenWords}"` : '',
+    metrics.genericOpening ? '- פתיחה גנרית (היי/שלום) — חלשה ל-retention' : '',
     `- מתח/שאלה ב-Hook: ${metrics.hookHasQuestionOrTension ? 'כן' : 'לא'}`,
     `- CTA מילולי: ${metrics.ctaAtSec != null ? `ב-${metrics.ctaAtSec}s` : 'לא זוהה'}`,
     metrics.longestPauseSec ? `- השהיה ארוכה: ${metrics.longestPauseSec}s` : '',

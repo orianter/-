@@ -431,7 +431,7 @@ serve(async (req) => {
       ok: true,
       hasApiKey: Boolean(apiKey),
       demoMode: false,
-      maxDurationSec: 60,
+      maxDurationSec: 120,
       maxFileMb: 100,
       service: 'supabase-edge-analyze',
       model: 'gpt-4o',
@@ -451,8 +451,8 @@ serve(async (req) => {
     const input = await req.json();
     const platform = normalizePlatform(input.platform);
     const durationSec = Math.round((Number(input.durationSec) || 60) * 10) / 10;
-    if (durationSec > 65) {
-      return json({ error: 'הסרטון ארוך מדי. המקסימום הוא דקה אחת.' }, 400);
+    if (durationSec > 125) {
+      return json({ error: 'הסרטון ארוך מדי. המקסימום הוא 2 דקות (120 שניות).' }, 400);
     }
 
     const frameImages = normalizeFrameImages(input.frameImages);

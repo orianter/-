@@ -180,7 +180,7 @@ function publicMeta(videoMeta) {
 export async function analyzeVideoDemo({ videoPath, platform, goal, problem }) {
   const videoMeta = await getVideoMetadata(videoPath);
   if (videoMeta.durationSec > MAX_DURATION_SEC) {
-    throw new Error('הסרטון ארוך מדי. מקסימום דקה אחת (60 שניות).');
+    throw new Error('הסרטון ארוך מדי. המקסימום הוא 2 דקות (120 שניות).');
   }
   return {
     demo: true,
@@ -198,7 +198,7 @@ export async function analyzeVideo({ videoPath, workDir, platform, goal, problem
   const durationSec = videoMeta.durationSec;
 
   if (durationSec > MAX_DURATION_SEC) {
-    throw new Error('הסרטון ארוך מדי. מקסימום דקה אחת (60 שניות).');
+    throw new Error('הסרטון ארוך מדי. המקסימום הוא 2 דקות (120 שניות).');
   }
 
   const audioPath = path.join(workDir, 'audio.mp3');

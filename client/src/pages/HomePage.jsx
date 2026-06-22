@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { DemoReportPreview } from '../components/DemoReport';
 import { FAQ } from '../components/FAQ';
@@ -7,7 +8,7 @@ import { AiDisclaimer } from '../components/AiDisclaimer';
 import { COMPARISON, TESTIMONIALS, TRUST_STATS } from '../data/content';
 
 const STEPS = [
-  { num: '1', title: 'העלה סרטון', desc: 'גרור רילס עד דקה — MP4, MOV או WebM. הסרטון לא נשמר בשרת', icon: '📤' },
+  { num: '1', title: 'העלה סרטון', desc: 'גרור רילס עד 2 דקות — MP4, MOV או WebM. הסרטון לא נשמר בשרת', icon: '📤' },
   { num: '2', title: 'ספר מה קורה בו', desc: 'פלטפורמה, מטרה, קהל — וחובה: מה נאמר/כתוב בסרטון (עם שניות)', icon: '📝' },
   { num: '3', title: 'קבל דוח מלא', desc: 'ציונים, ממצאים עם ראיה, תיקונים, פתיחה ותסריט — הכל בעברית', icon: '📊' },
 ];
@@ -19,6 +20,17 @@ const AUDIENCE = [
 ];
 
 export default function HomePage() {
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('pricing') || window.location.hash === '#pricing') {
+      const timer = setTimeout(() => {
+        document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' });
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, []);
+
   return (
     <div className="landing">
       <section className="hero">

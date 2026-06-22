@@ -115,7 +115,7 @@ function visualEvidence(input) {
   const platformFitScore = Math.min(10, Math.max(1, Math.round(
     (isVertical ? 8 : 4) +
     (durationSec <= 35 ? 1 : 0) +
-    (durationSec > 60 ? -3 : 0),
+    (durationSec > 90 ? -3 : 0),
   )));
 
   const notes = [

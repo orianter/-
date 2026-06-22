@@ -210,16 +210,23 @@ function normalizeFrameImages(images) {
     .filter((item) => item && typeof item === 'object')
     .map((item) => {
       const base64 = asText(item.base64);
-      if (!base64 || base64.length > 200_000) return null;
+      if (!base64 || base64.length > 180_000) return null;
+      const second = Number(item.second) || 0;
+      const label = asText(item.label, 'פריים');
       return {
-        second: Number(item.second) || 0,
-        label: asText(item.label, 'פריים'),
-        isHook: Boolean(item.isHook) || Number(item.second) <= 1,
+        second,
+        label,
+        isHook: Boolean(item.isHook) || second <= 3,
         base64,
       };
     })
     .filter(Boolean)
-    .slice(0, 5);
+    .sort((a, b) => {
+      const hookDiff = Number(b.isHook) - Number(a.isHook);
+      if (hookDiff !== 0) return hookDiff;
+      return a.second - b.second;
+    })
+    .slice(0, 8);
 }
 
 function buildPrompt(input, hasVision, transcriptText = '') {
@@ -248,6 +255,14 @@ function buildPrompt(input, hasVision, transcriptText = '') {
 3. אל תמציא דיבור/טקסט — השתמש בתמלול Whisper, contentBrief ומה שרואים בפריימים
 4. אם חסר מידע — כתוב במפורש "לא ניתן לבדוק X כי Y"
 5. אל תכתוב משפטים גנריים כמו "שפר את ה-Hook" — תגיד בדיוק מה לשנות ולמה
+6. **חובה לצטט לפחות 2 ממצאים ממדדי הדיבור (speechMetrics) ו-2 ממדדי הקצב (pacingMetrics)** — ב-summary, categories.note או detailedFindings
+7. נתח retention psychology: מה גורם לגלילה ב-0–3 שנ', האם יש curiosity gap, pattern interrupt, או payoff מובטח
+
+## OCR וטקסט על המסך (חובה כשיש פריימים)
+- קרא **כל** טקסט גלוי בפריימים: כותרות, כתוביות, CTA, מספרים, אימוג'ים טקסטואליים
+- הוסף כל טקסט ל-onScreenText בפורmat: "[X.Xs] הטקסט המדויק"
+- אם טקסט על המסך חוזר/נעלם — ציין מתי
+- השווה טקסט על המסך לתמלול — אם סותר, ציין זאת
 
 ## מה יש לך
 ${hasVision
@@ -288,12 +303,12 @@ ${formatFrameMetrics(input.frameMetrics)}
 ${formatAudioMetrics(input.audioMetrics)}
 
 ## מה לנתח בכל קטגוריה
-1. Hook (0-3 שנ'): מתח, הבטחה, שינוי ויזואלי, אודיו בפתיחה
-2. קצב: שינויי סצנה בין פריימים — האם סטטי?
+1. Hook (0-3 שנ'): מתח, הבטחה, שינוי ויזואלי, אודיו בפתיחה — **האם יש סיבה להישאר?**
+2. קצב: שינויי סצנה בין פריימים — האם סטטי? האם יש dead air?
 3. מסר: הבטחה, ערך, CTA — לפי ${hasTranscript ? 'תמלול + contentBrief' : 'contentBrief'}
-4. ויזואל: בהירות, חדות, קונטרסט, פורמט
+4. ויזואל: בהירות, חדות, קונטרסט, פורמט, טקסט על המסך
 5. אודיו: עוצמה, שקט בפתיחה, מוזיקה/דיבור
-6. התאמה ל-${platformLabel}: hook מהיר, אורך, פורמát אנכי
+6. התאמה ל-${platformLabel}: hook מהיר, אורך, פורמט אנכי
 
 ## דרישות פלט
 - summary: 3-5 משפטים עם מספרים/שניות
@@ -363,13 +378,17 @@ function buildMessages(input, transcriptText = '') {
 
   const content = [
     { type: 'text', text: prompt },
-    ...frameImages.flatMap((img) => [
-      { type: 'text', text: `[פריים ב-${img.second.toFixed(1)} שניות — ${img.label}]` },
-      {
-        type: 'image_url',
-        image_url: { url: `data:image/jpeg;base64,${img.base64}`, detail: img.isHook || img.second <= 3 ? 'high' : 'auto' },
-      },
-    ]),
+    ...frameImages.flatMap((img) => {
+      const labelLower = img.label.toLowerCase();
+      const highDetail = img.isHook || img.second <= 3 || /hook|cta/i.test(labelLower);
+      return [
+        { type: 'text', text: `[פריים ב-${img.second.toFixed(1)} שניות — ${img.label}]` },
+        {
+          type: 'image_url',
+          image_url: { url: `data:image/jpeg;base64,${img.base64}`, detail: highDetail ? 'high' : 'auto' },
+        },
+      ];
+    }),
   ];
 
   return [
@@ -380,13 +399,16 @@ function buildMessages(input, transcriptText = '') {
 
 function selectModel(input) {
   const frameImages = normalizeFrameImages(input.frameImages);
+  if (frameImages.length > 0) return 'gpt-4o';
   const frameCount = Array.isArray(input.frameMetrics) ? input.frameMetrics.length : 0;
-  if (frameImages.length > 0 || frameCount >= 3) return 'gpt-4o';
+  if (frameCount >= 3) return 'gpt-4o';
   return 'gpt-4o-mini';
 }
 
-async function validateAnalysisDraft(analysis, evidenceBlock, apiKey) {
+async function validateAnalysisDraft(analysis, evidenceBlock, apiKey, { contentBrief = '', onScreenText = [] } = {}) {
   try {
+    const briefSnippet = asText(contentBrief).slice(0, 400);
+    const onScreenList = Array.isArray(onScreenText) ? onScreenText.slice(0, 8).join('\n- ') : '';
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -404,11 +426,19 @@ async function validateAnalysisDraft(analysis, evidenceBlock, apiKey) {
           {
             role: 'user',
             content: `בדוק שהדוח תואם לראיות. אם finding/summary/verdict לא מגובים — תקן או הסר.
+בדוק ש-onScreenText תואם לטקסט שמופיע ב-contentBrief (אם יש).
+אל תשאיר טענות על טקסט על המסך שלא מופיע בראיות או ב-onScreenText.
+
+## contentBrief (קטע)
+${briefSnippet || 'לא צוין'}
+
+## onScreenText בdraft
+${onScreenList ? `- ${onScreenList}` : 'ריק'}
 
 ## ראיות
 ${evidenceBlock}
 
-## דraft
+## draft
 ${JSON.stringify(analysis).slice(0, 12000)}
 
 החזר JSON: { "analysis": { ...אותו מבנה... }, "removedClaims": ["..."] }`,
@@ -434,7 +464,7 @@ ${JSON.stringify(analysis).slice(0, 12000)}
 export async function runOpenAiAnalysis(input, apiKey) {
   const platform = normalizePlatform(input.platform);
   const durationSec = Math.round((Number(input.durationSec) || 60) * 10) / 10;
-  if (durationSec > 65) throw new Error('הסרטון ארוך מדי. המקסימום הוא דקה אחת.');
+  if (durationSec > 125) throw new Error('הסרטון ארוך מדי. המקסימום הוא 2 דקות (120 שניות).');
 
   const model = selectModel(input);
   const frameImages = normalizeFrameImages(input.frameImages);
@@ -466,7 +496,11 @@ export async function runOpenAiAnalysis(input, apiKey) {
   const pacingMetrics = analyzePacingMetrics(input.frameMetrics, input.audioMetrics, durationSec);
   const enrichedInput = { ...input, speechMetrics, pacingMetrics };
 
-  const costEstimate = estimateAnalysisCostUsd(durationSec, { hasVision, hasWhisper: whisperUsed });
+  const costEstimate = estimateAnalysisCostUsd(durationSec, {
+    hasVision,
+    hasWhisper: whisperUsed,
+    visionFrameCount: frameImages.length,
+  });
 
   const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -478,8 +512,8 @@ export async function runOpenAiAnalysis(input, apiKey) {
       model,
       response_format: { type: 'json_object' },
       messages: buildMessages(enrichedInput, transcriptText),
-      max_tokens: 6000,
-      temperature: 0.15,
+      max_tokens: 8000,
+      temperature: 0.12,
     }),
   });
 
@@ -498,11 +532,14 @@ export async function runOpenAiAnalysis(input, apiKey) {
     formatPacingMetrics(pacingMetrics),
     formatFrameMetrics(input.frameMetrics),
     formatAudioMetrics(input.audioMetrics),
-    hasTranscript ? `תמלול:\n${transcriptText.slice(0, 2000)}` : '',
+    hasTranscript ? `תמלול:\n${transcriptText.slice(0, 3000)}` : '',
   ].filter(Boolean).join('\n\n');
 
   if (whisperUsed || hasVision) {
-    analysis = await validateAnalysisDraft(analysis, evidenceBlock, apiKey);
+    analysis = await validateAnalysisDraft(analysis, evidenceBlock, apiKey, {
+      contentBrief: input.contentBrief,
+      onScreenText: analysis.onScreenText,
+    });
   }
 
   return {
@@ -535,7 +572,7 @@ export function getHealthInfo(apiKey) {
     ok: true,
     hasApiKey: Boolean(apiKey),
     demoMode: false,
-    maxDurationSec: 60,
+    maxDurationSec: 120,
     maxFileMb: 100,
     freeTierLimit: 1,
     service: apiKey ? 'vercel-openai' : 'supabase-proxy',

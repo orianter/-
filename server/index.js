@@ -102,7 +102,7 @@ app.get('/api/health', (_req, res) => {
     ok: true,
     hasApiKey: hasApiKey(),
     demoMode: !hasApiKey(),
-    maxDurationSec: 60,
+    maxDurationSec: 120,
     maxFileMb: 100,
     version: '2.0.0',
   });

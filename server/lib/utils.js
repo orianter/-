@@ -8,7 +8,7 @@ export const PLATFORM_LABELS = {
 
 export const VALID_PLATFORMS = ['tiktok', 'reels', 'both'];
 
-export const MAX_DURATION_SEC = 65;
+export const MAX_DURATION_SEC = 125;
 
 export const CATEGORY_KEYS = ['hook', 'pacing', 'message', 'visual', 'audio', 'platformFit'];
 
@@ -33,13 +33,14 @@ export function clampScore(value, fallback = 5) {
 
 // Choose which timestamps to sample for visual analysis, weighted toward the hook.
 export function buildFrameTimestamps(durationSec) {
-  const d = Math.min(Math.max(durationSec || 0, 0), 60);
+  const d = Math.min(Math.max(durationSec || 0, 0), 120);
   const points = new Set([0, 0.5, 1, 2, 3, 5]);
 
   if (d > 8) points.add(Math.round(d * 0.2));
   if (d > 10) points.add(Math.round(d * 0.4));
   if (d > 14) points.add(Math.round(d * 0.6));
-  if (d > 18) points.add(Math.round(d * 0.8));
+  if (d > 60) points.add(Math.round(d * 0.7));
+  if (d > 90) points.add(Math.round(d * 0.85));
   if (d > 4) points.add(Math.max(0, Math.round(d - 2)));
 
   return [...points]
