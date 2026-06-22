@@ -409,6 +409,9 @@
 }
 
 .pricing__toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   padding: 0.55rem 1.25rem;
   border-radius: 999px;
   border: 1px solid var(--border);
@@ -418,6 +421,16 @@
   font-size: 0.85rem;
   cursor: pointer;
   transition: all 0.2s var(--ease);
+}
+
+.pricing__toggle-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(254, 44, 85, 0.2);
+  color: var(--accent-2);
+  letter-spacing: 0.02em;
 }
 
 .pricing__toggle-btn--active {

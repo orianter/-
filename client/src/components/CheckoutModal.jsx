@@ -35,7 +35,13 @@ export function CheckoutModal({ state, onClose }) {
             <span className="checkout-modal__was">₪{plan.price}</span>
           )}
           <strong>₪{displayPrice}</strong>
-          <span>{hasDiscount ? 'לחודש הראשון' : plan.period}</span>
+          <span>
+            {hasDiscount
+              ? 'לחודש הראשון'
+              : plan.monthlyEquivalent
+                ? `${plan.period} (~₪${plan.monthlyEquivalent}/חודש)`
+                : plan.period}
+          </span>
         </div>
         <ul className="checkout-modal__features">
           {plan.features.slice(0, 4).map((f) => (
